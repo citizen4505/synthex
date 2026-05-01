@@ -1,133 +1,63 @@
-/*
- * MillisTimer.h
- * Pomocné časovací nástroje založené na millis() odečtu.
- *
- * Proč NE delay()?
- *   delay() blokuje CPU — žádná ISR, žádný Serial, žádný event handling.
- *   millis()-odečet umožňuje "čekání" bez blokování smyčky.
- *
- * Proč uint32_t přetečení NEVADÍ?
- *   millis() přeteče po ~49.7 dnech (0xFFFFFFFF / 1000 / 60 / 60 / 24).
- *   Unsigned odečet wraps-around správně:
- *     start = 0xFFFFFF00, now = 0x000000FF
- *     now - start = 0x1FF = 511 ms  ✓
- *
- * Hardware: Arduino Due (SAM3X8E, 84 MHz)
- */
-
 #pragma once
 #include <Arduino.h>
-#include <stdint.h>
 
-// ─────────────────────────────────────────────────────────
-//  1) Blokující delay — používej POUZE mimo ISR (init, debug)
-//
-//  Ekvivalent delay(), ale explicitně ukazuje mechanismus.
-//  Vhodné pro: čekání na stabilizaci hardware po resetu.
-// ─────────────────────────────────────────────────────────
-inline void blocking_delay_ms(uint32_t ms) {
-    const uint32_t start = millis();
-    // millis() - start je vždy >= 0 díky unsigned wrapping
-    while ((millis() - start) < ms) {
-        // CPU čeká — ISR stále běží (TC3_Handler ano, ale loop ne)
-        // yield() by šlo zavolat pro RTOS kompatibilitu
-    }
-}
-
-// ─────────────────────────────────────────────────────────
-//  2) Neblokující timer — základ event-driven architektu
-//
-//  Použití v loop():
-//    static MillisTimer ledTimer(500);
-//    if (ledTimer.expired()) {
-//        toggleLed();
-//        ledTimer.reset();  // nebo auto-reset přes autoReset=true
-//    }
-// ─────────────────────────────────────────────────────────
+/*
+ * MillisTimer — neblokovací časovač nad millis()
+ *
+ * Dva režimy:
+ *   autoReset = false  →  expired() vrací true jen jednou; musíš volat reset()
+ *   autoReset = true   →  expired() posune referenci o přesně _interval ms
+ *                          → žádná akumulace driftu i při vynechání jednoho cyklu
+ *
+ * Příklad:
+ *   MillisTimer ledBlink(500, true);   // bliká přesně každých 500 ms
+ *   if (ledBlink.expired()) toggleLed();
+ *
+ *   MillisTimer oneShot(2000);          // spustí se jednou po 2 s
+ *   if (oneShot.expired()) { doThing(); oneShot.reset(); }
+ *
+ * Bezpečné přes přetečení millis() (uint32 wrap ≈ po 49 dnech):
+ *   (now - _last) je korektní i po přetečení díky unsigned aritmetice.
+ */
 class MillisTimer {
 public:
-    // Konstruktor — interval v ms, volitelný auto-reset
+    // interval    — perioda v milisekundách
+    // autoReset   — automaticky posunout referenci po vypršení (bez driftu)
     explicit MillisTimer(uint32_t intervalMs, bool autoReset = false)
-        : _interval(intervalMs)
-        , _startMs(millis())       // start od okamžiku vytvoření
-        , _autoReset(autoReset)
-    {}
+        : _interval(intervalMs), _last(millis()), _autoReset(autoReset) {}
 
-    // Vrátí true, pokud uplynul interval od posledního resetu
+    // Vrátí true, pokud uplynul interval.
+    // V režimu autoReset: posune referenci o přesně _interval (ne na now),
+    // takže celková perioda zůstane přesná i při opožděném poll.
     bool expired() {
-        if ((millis() - _startMs) >= _interval) {
+        const uint32_t now = millis();
+        if (now - _last >= _interval) {
             if (_autoReset) {
-                // Posuneme startovní bod o přesný interval
-                // (ne millis()) — zabraňuje drift akumulaci
-                _startMs += _interval;
+                _last += _interval;   // posun přesně o interval, ne na now → bez driftu
             }
             return true;
         }
         return false;
     }
 
-    // Ruční reset časovače (bez auto-reset)
-    void reset() {
-        _startMs = millis();
-    }
+    // Ruční reset — posune referenci na aktuální čas.
+    // Používej v manuálním režimu (autoReset = false).
+    void reset() { _last = millis(); }
 
-    // Reset s novým intervalem
-    void reset(uint32_t newIntervalMs) {
-        _interval  = newIntervalMs;
-        _startMs   = millis();
-    }
-
-    // Kolik ms zbývá do expirace (0 pokud již expiroval)
+    // Zbývající ms do příštího vypršení (0 pokud už vypršel)
     uint32_t remaining() const {
-        const uint32_t elapsed = millis() - _startMs;
-        return (elapsed < _interval) ? (_interval - elapsed) : 0u;
+        const uint32_t elapsed = millis() - _last;
+        return (elapsed >= _interval) ? 0u : (_interval - elapsed);
     }
 
-    // Kolik ms uplynulo od posledního resetu
-    uint32_t elapsed() const {
-        return millis() - _startMs;
-    }
+    // Dynamická změna intervalu (platí od příštího cyklu)
+    void setInterval(uint32_t ms) { _interval = ms; }
+
+    // Přečíst aktuální interval
+    uint32_t interval() const { return _interval; }
 
 private:
     uint32_t _interval;
-    uint32_t _startMs;
+    uint32_t _last;
     bool     _autoReset;
-};
-
-// ─────────────────────────────────────────────────────────
-//  3) Jednorázový Stopwatch — měření doby trvání úseku kódu
-//
-//  Použití:
-//    Stopwatch sw;
-//    sw.start();
-//    doSomething();
-//    Serial.println(sw.elapsedMs());
-// ─────────────────────────────────────────────────────────
-class Stopwatch {
-public:
-    Stopwatch() : _startMs(0), _running(false) {}
-
-    void start() {
-        _startMs = millis();
-        _running = true;
-    }
-
-    // Vrátí ms od start() — nebo celkový čas pokud byl zastaven
-    uint32_t elapsedMs() const {
-        return _running ? (millis() - _startMs) : _snapshot;
-    }
-
-    // Zastaví měření, uloží snapshot
-    uint32_t stop() {
-        _snapshot = millis() - _startMs;
-        _running  = false;
-        return _snapshot;
-    }
-
-    bool isRunning() const { return _running; }
-
-private:
-    uint32_t _startMs;
-    uint32_t _snapshot = 0;
-    bool     _running;
 };

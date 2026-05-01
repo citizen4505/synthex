@@ -16,10 +16,10 @@
 #pragma once
 #include <stdint.h>
 
-#define BMC_WAVETABLE_SIZE  2048u
-#define BMC_WAVETABLE_COUNT 6u
+#define SYNTHEX_WAVETABLE_SIZE  2048u
+#define SYNTHEX_WAVETABLE_COUNT 6u
 
-// Index do pole BMC_WAVETABLE_TABLE_PTRS[]
+// Index do pole SYNTHEX_WAVETABLE_TABLE_PTRS[]
 enum class WaveType : uint8_t {
     SINE                 = 0,
     SAW                  = 1,
@@ -32,7 +32,7 @@ enum class WaveType : uint8_t {
 
 // ───────────────────────────────────────────────────────
 // SINE  // min= -2047  max=  2047  peak_error=+0
-const int16_t BMC_TABLE_SINE[BMC_WAVETABLE_SIZE] = {
+const int16_t SYNTHEX_TABLE_SINE[SYNTHEX_WAVETABLE_SIZE] = {
          0,      6,     13,     19,     25,     31,     38,     44,     50,     57,     63,     69,     75,     82,     88,     94,
        100,    107,    113,    119,    126,    132,    138,    144,    151,    157,    163,    169,    176,    182,    188,    194,
        201,    207,    213,    219,    226,    232,    238,    244,    251,    257,    263,    269,    275,    282,    288,    294,
@@ -165,7 +165,7 @@ const int16_t BMC_TABLE_SINE[BMC_WAVETABLE_SIZE] = {
 
 // ───────────────────────────────────────────────────────
 // SAW  // min= -2047  max=  2045  peak_error=+0
-const int16_t BMC_TABLE_SAW[BMC_WAVETABLE_SIZE] = {
+const int16_t SYNTHEX_TABLE_SAW[SYNTHEX_WAVETABLE_SIZE] = {
      -2047,  -2045,  -2043,  -2041,  -2039,  -2037,  -2035,  -2033,  -2031,  -2029,  -2027,  -2025,  -2023,  -2021,  -2019,  -2017,
      -2015,  -2013,  -2011,  -2009,  -2007,  -2005,  -2003,  -2001,  -1999,  -1997,  -1995,  -1993,  -1991,  -1989,  -1987,  -1985,
      -1983,  -1981,  -1979,  -1977,  -1975,  -1973,  -1971,  -1969,  -1967,  -1965,  -1963,  -1961,  -1959,  -1957,  -1955,  -1953,
@@ -298,7 +298,7 @@ const int16_t BMC_TABLE_SAW[BMC_WAVETABLE_SIZE] = {
 
 // ───────────────────────────────────────────────────────
 // SQUARE  // min= -2047  max=  2047  peak_error=+0
-const int16_t BMC_TABLE_SQUARE[BMC_WAVETABLE_SIZE] = {
+const int16_t SYNTHEX_TABLE_SQUARE[SYNTHEX_WAVETABLE_SIZE] = {
       2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,
       2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,
       2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,   2047,
@@ -431,7 +431,7 @@ const int16_t BMC_TABLE_SQUARE[BMC_WAVETABLE_SIZE] = {
 
 // ───────────────────────────────────────────────────────
 // TRIANGLE  // min= -2047  max=  2047  peak_error=+0
-const int16_t BMC_TABLE_TRIANGLE[BMC_WAVETABLE_SIZE] = {
+const int16_t SYNTHEX_TABLE_TRIANGLE[SYNTHEX_WAVETABLE_SIZE] = {
      -2047,  -2043,  -2039,  -2035,  -2031,  -2027,  -2023,  -2019,  -2015,  -2011,  -2007,  -2003,  -1999,  -1995,  -1991,  -1987,
      -1983,  -1979,  -1975,  -1971,  -1967,  -1963,  -1959,  -1955,  -1951,  -1947,  -1943,  -1939,  -1935,  -1931,  -1927,  -1923,
      -1919,  -1915,  -1911,  -1907,  -1903,  -1899,  -1895,  -1891,  -1887,  -1883,  -1879,  -1875,  -1871,  -1867,  -1863,  -1859,
@@ -564,7 +564,7 @@ const int16_t BMC_TABLE_TRIANGLE[BMC_WAVETABLE_SIZE] = {
 
 // ───────────────────────────────────────────────────────
 // BANDLIMITED_SAW  // min= -2292  max=  2292  peak_error=+245
-const int16_t BMC_TABLE_BANDLIMITED_SAW[BMC_WAVETABLE_SIZE] = {
+const int16_t SYNTHEX_TABLE_BANDLIMITED_SAW[SYNTHEX_WAVETABLE_SIZE] = {
          0,      0,      0,      0,      0,      0,      0,      0,      0,      1,      1,      1,      1,      2,      2,      3,
          3,      4,      5,      6,      6,      7,      9,     10,     11,     12,     14,     15,     17,     19,     21,     22,
         25,     27,     29,     31,     34,     36,     39,     42,     44,     47,     50,     54,     57,     60,     63,     67,
@@ -697,7 +697,7 @@ const int16_t BMC_TABLE_BANDLIMITED_SAW[BMC_WAVETABLE_SIZE] = {
 
 // ───────────────────────────────────────────────────────
 // DEMO_SAMPLE  // min=-2048   max=2047    peak_error=?
-const int16_t BMC_TABLE_DEMO_SAMPLE[BMC_WAVETABLE_SIZE] = {
+const int16_t SYNTHEX_TABLE_DEMO_SAMPLE[SYNTHEX_WAVETABLE_SIZE] = {
       2014,   2015,   2017,   2018,   2020,   2021,   2022,   2024,   2025,   2026,   2027,   2028,   2030,   2031,   2032,   2033,
       2034,   2035,   2035,   2036,   2037,   2038,   2039,   2039,   2040,   2041,   2041,   2042,   2043,   2043,   2043,   2044,
       2044,   2045,   2045,   2045,   2046,   2046,   2046,   2046,   2046,   2046,   2046,   2046,   2047,   2046,   2046,   2046,
@@ -829,12 +829,12 @@ const int16_t BMC_TABLE_DEMO_SAMPLE[BMC_WAVETABLE_SIZE] = {
 };
 
 
-// Pole ukazatelů — přístup: BMC_TABLES[(uint8_t)waveType][idx]
-const int16_t* const BMC_TABLES[BMC_WAVETABLE_COUNT] = {
-    BMC_TABLE_SINE,
-    BMC_TABLE_SAW,
-    BMC_TABLE_SQUARE,
-    BMC_TABLE_TRIANGLE,
-    BMC_TABLE_BANDLIMITED_SAW,
-    BMC_TABLE_DEMO_SAMPLE,
+// Pole ukazatelů — přístup: SYNTHEX_TABLES[(uint8_t)waveType][idx]
+const int16_t* const SYNTHEX_TABLES[SYNTHEX_WAVETABLE_COUNT] = {
+    SYNTHEX_TABLE_SINE,
+    SYNTHEX_TABLE_SAW,
+    SYNTHEX_TABLE_SQUARE,
+    SYNTHEX_TABLE_TRIANGLE,
+    SYNTHEX_TABLE_BANDLIMITED_SAW,
+    SYNTHEX_TABLE_DEMO_SAMPLE,
 };

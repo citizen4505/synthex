@@ -1,73 +1,283 @@
-# BareMetalCore
+# Synthex
 
-## **Jak engine funguje**
-
-`TC3_Handler() `→`processSample()`→` DAC OUTPUT`
-
-`TC3_Handler()` zajistí přerušení (**44 100× za sekundu)** . `ProcessSample()` potom při každém přerušení z `TC3` zapisuje přímo do `DACC->DACC_CDR`
-
-## **Fázový akumulátor (phase accumulator)**
-
-Klasická DDS technika. Každý hlas má 32-bitový akumulátor, do kterého se přičítá `phaseIncrement`. Horních 11 bitů = index do 2048-prvkové tabulky. Výsledek je extrémně přesná frekvence bez dělení nebo modula.
-
-```
-phaseIncrement = (freqHz / 44100) × 2³²
-```
-
-## **Wavetables**
-
-- Sinus, Pila, Čtverec, Trojúhelník
-- `PMC` — clock gating pro DACC a TC1
-- `DACC_MR` — konfigurace DAC bez Arduino HAL
-- `TC_CMR` + `TC_RC` — přesná perioda timeru
-- `NVIC` — priorita 0 (nejnižší latence)
-
-## DAC výstup
-
-```
-  Arduino Due DAC0        Op-amp stage           Line out
-(0–3.3 V, DC offset) → [AC coupling + gain] → 2 Vrms / 600 Ω
-```
-
-### Úprava na 2 Vrms
-
-Požadované Vrms_out: 2.00 V
-
-DAC výstup = 0 V - 3.3 V
-
-DC offset = 1.65 V
-
-Vpeak_max = 1.65 V
-
-Vrms_DAC = 1.65 / √2 ≈ 1.167 V
-
-Nutné zesílení: 2 / 1.167 ≈ 1.71
-
-Zisk = R2 / R1 = ?k / 10kΩ = 1.71 => ?kΩ = 1.71 × 10kΩ = 17.1kΩ
-
-Zisk = 17.1kΩ / 10kΩ = 1.71
-
-Vrms_out = Vrms_DAC × Zisk = 1.167 × 1.71 = 2
-
-### Schéma
-
-Invertující operační zesilovač s AC vazbou. C1 odstraní DC offset 1.65 V.
-
-fc = 1 / (2π × R1 × C1) = 1 / (2π × 10kΩ × 100µF) ≈ 0.16 Hz
-
-* `C1` = 100 µF/16 V ele.
-* `R1` = 10 kΩ
-* `R2` = 20 kΩ trim. (nastavit na 17.1 kΩ)
-* `R3` = 100 Ω (ochrana výstupu)
-* `R_bias` = 100 kΩ (drží kladný vstup op na GND přes AC)
-* `JRC 4580 (`Při ±12 V napájení dosáhne výstup ±10 V. Vpeak ≈ 2.83 V (= 2 Vrms × √2) OK.)
-
-  ![img](schematics/op_amp_2Vrms.png "op_amp 2Vrms")
-
-
+Vícehlasý wavetable syntezátor pro SAM3X8E, 84 MHz ARM Cortex-M3 (Arduino Due).
+Zvuk je generován přímým čtením z Flash paměti bez kopírování do RAM, s výstupem přes 12-bit DAC na pinu **DAC1 (PA3)**.
 
 ---
 
-**Poznámky:**
+## Obsah
 
-* **Balanced output** : pro studiovou linku dát druhý kanál přes invertor (op-amp s gain = −1) a oba výstupy na XLR konektor.
+- [Přehled architektury](#přehled-architektury)
+- [Hardware](#hardware)
+- [Parametry enginu](#parametry-enginu)
+- [Wavetables](#wavetables)
+- [Fázový akumulátor](#fázový-akumulátor)
+- [Struktura projektu](#struktura-projektu)
+- [API reference](#api-reference)
+- [Rychlý start](#rychlý-start)
+- [Diagnostika](#diagnostika)
+- [Známé chování a limity](#známé-chování-a-limity)
+
+---
+
+## Přehled architektury
+
+```
+loop()                       setup()
+  │                            │
+  │  noteOn / noteOff          │     begin()
+  │──────────────────►      Synthex  ◄── _initDACC()
+                               │         _initTimer()
+                               │
+                    TC3_Handler() @ 44100 Hz
+                               │
+                     processSample()
+                               │
+               ┌───────────────┴───────────────┐
+               │  pro každý aktivní hlas:       │
+               │  phaseAccum += phaseIncrement  │
+               │  tableIdx = phaseAccum >> 21   │
+               │  sample = BMC_TABLES[wave][idx]│
+               │  mix += sample * amplitude     │
+               └───────────────────────────────┘
+                               │
+                    DACC->DACC_CDR = mix + 2048
+```
+
+Syntezátor je řízen **přerušením časovače TC3** (TC1/CH0) s frekvencí přesně 44 100 Hz.
+V každém přerušení se spočítá jeden vzorek za každý aktivní hlas, výsledky se smíchají a odešlou do DAC.
+
+---
+
+## Hardware
+
+| Parametr             | Hodnota                     |
+| -------------------- | --------------------------- |
+| Procesor             | SAM3X8E (ARM Cortex-M3)     |
+| Takt                 | 84 MHz                      |
+| Deska                | Arduino Due                 |
+| DAC výstup          | `DAC1` — pin PA3         |
+| Rozlišení DAC      | 12 bit (0–4095)            |
+| Výstupní kmitočet | 44 100 Hz                   |
+| Časovač            | TC1 / Channel 0 → TC3_IRQn |
+| Prescaler            | MCK/2 = 42 MHz → RC = 952  |
+
+---
+
+## Parametry enginu
+
+Definovány v `Synthex.h`:
+
+```cpp
+#define SYNTHEX_SAMPLE_RATE     44100u   // vzorkovací kmitočet [Hz]
+#define SYNTHEX_VOICES          4u       // počet simultánních hlasů
+#define SYNTHEX_DAC_RESOLUTION  12u      // rozlišení DAC [bit]
+#define SYNTHEX_DAC_MAX         4095u    // maximum DAC (2^12 - 1)
+#define SYNTHEX_DAC_MID         2048u    // DC střed (ticho)
+#define SYNTHEX_PHASE_SHIFT     21u      // (32 - 11), horních 11 bitů = index tabulky
+```
+
+---
+
+## Wavetables
+
+Tabulky jsou předgenerovány skriptem `generate_wavetables.py` a uloženy v `wavetables.h` jako `const int16_t[]` — tedy přímo ve **Flash paměti** (`.rodata`). Za běhu se nekopírují do RAM.
+
+| Index | `WaveType`        | Popis                          | Min    | Max   |
+| ----- | ------------------- | ------------------------------ | ------ | ----- |
+| 0     | `SINE`            | Sinus                          | −2047 | +2047 |
+| 1     | `SAW`             | Pilový průběh               | −2047 | +2045 |
+| 2     | `SQUARE`          | ⚠ Viz poznámka níže        | −2047 | +2047 |
+| 3     | `TRIANGLE`        | Trojúhelník                  | −2047 | +2047 |
+| 4     | `BANDLIMITED_SAW` | Pilový průběh bez aliasingu | −2292 | +2292 |
+
+Každá tabulka: **2048 vzorků × 2 B = 4 096 B**
+Celkem: **5 × 4 096 B = 20 480 B = 20 KB Flash**
+
+> **⚠ `WaveType::SQUARE`** — navzdory názvu a hodnotám v tabulce engine pro tento typ místo čtení z tabulky generuje **šum pomocí 32-bitového Galoisova LFSR**. Tabulka `BMC_TABLE_SQUARE` se za běhu nepoužívá. Pokud potřebuješ skutečný obdélník, přidej nový `WaveType` a uprav `processSample()`.
+
+> **⚠ `BANDLIMITED_SAW`** — amplituda přesahuje 12-bit rozsah (peak ±2292). Po vynásobení amplitudou může dojít k ořezu v DAC výstupu. Při použití doporučujeme snížit `amplitude`.
+
+---
+
+## Fázový akumulátor
+
+Syntéza tónu funguje na principu **Direct Digital Synthesis (DDS)**:
+
+```
+phaseIncrement = freqHz × (2^32 / sampleRate)
+phaseAccum    += phaseIncrement   // přetečení = přirozené zarolování
+tableIdx       = phaseAccum >> 21 // horních 11 bitů → 0–2047
+```
+
+Přepočet frekvence na inkrement (`freqToIncrement`):
+
+```cpp
+constexpr float k = (float)(1ULL << 32) / 44100.0f;  // ≈ 97 391.3
+uint32_t inc = (uint32_t)(freqHz * k);
+```
+
+Příklady:
+
+| Nota | Frekvence | phaseIncrement (approx.) |
+| ---- | --------- | ------------------------ |
+| A4   | 440 Hz    | 42 452 000               |
+| C4   | 261 Hz    | 25 168 000               |
+| A5   | 880 Hz    | 84 904 000               |
+
+---
+
+## Struktura projektu
+
+```
+.
+├── Synthex.h    	    # Hlavní třída enginu, struct Voice, konfigurace
+├── Synthe.cpp  	    # Implementace: inicializace DAC/Timer, ISR, mix
+├── wavetables.h    	    # Předgenerované tabulky (Flash), WaveType enum
+├── main.cpp           	    # Setup a loop — sekvencer, volání API
+└── MillisTimer.h           # Jednoduchý timer bez blokování (předpokládán)
+```
+
+---
+
+## API reference
+
+### `Synthex` (singleton)
+
+```cpp
+Synthex& engine = Synthex::getInstance();
+```
+
+#### `begin()`
+
+Inicializuje DAC a časovač. Volat jednou v `setup()`.
+
+```cpp
+engine.begin();
+```
+
+---
+
+#### `noteOn(idx, freqHz, amplitude, wave)`
+
+Spustí hlas `idx` s danou frekvencí, amplitudou a průběhem.
+
+```cpp
+engine.noteOn(
+    0,               // index hlasu: 0–3
+    440.0f,           // frekvence [Hz]
+    100,             // amplituda: 0–4095 (pozor: 4095 = plná síla, může dojít ke clippingu při více hlasech)
+    WaveType::SINE   // typ průběhu
+);
+```
+
+> **Pozor na mix clipping:** součet všech aktivních hlasů se sčítá jako `int32_t` a teprve pak ořezává na 0–4095. Při 4 hlasech s amplitudou 4095 každý nutně dochází ke zkreslení. Doporučená bezpečná amplituda pro N hlasů: `4095 / N`.
+
+---
+
+#### `noteOff(idx)`
+
+Zastaví hlas `idx`.
+
+```cpp
+engine.noteOff(0);
+```
+
+---
+
+#### `getIsrCount()`
+
+Vrátí celkový počet volání ISR od `begin()`. Slouží k ověření stability sample rate.
+
+```cpp
+uint32_t count = engine.getIsrCount();
+// Očekáváno: count / (millis()/1000) ≈ 44100
+```
+
+---
+
+#### `freqToIncrement(freqHz)` — statická
+
+Převede frekvenci na hodnotu `phaseIncrement` (pro ruční manipulaci s hlasy).
+
+```cpp
+uint32_t inc = Synthex::freqToIncrement(880.0f);
+```
+
+---
+
+### `WaveType` enum
+
+```cpp
+enum class WaveType : uint8_t {
+    SINE            = 0,
+    SAW             = 1,
+    SQUARE          = 2,   // ⚠ Generuje šum (LFSR), ne obdélník!
+    TRIANGLE        = 3,
+    BANDLIMITED_SAW = 4,
+    COUNT           = 5
+};
+```
+
+---
+
+## Rychlý start
+
+```cpp
+#include "Synthex.h"
+
+Synthex& engine = Synthex::getInstance();
+
+void setup() {
+    engine.begin();
+
+    // Spustit A4 jako sinus, hlas 0
+    engine.noteOn(0, 440.0f, 512, WaveType::SINE);
+
+    // Spustit C4 jako pila, hlas 1
+    engine.noteOn(1, 261.0f, 512, WaveType::SAW);
+}
+
+void loop() {
+    // Logika, sekvencer, ...
+}
+```
+
+---
+
+## Diagnostika
+
+Pro ověření, zda timer běží na správné frekvenci, odkomentuj `diagTimer` blok v `main.cpp`:
+
+```cpp
+if (diagTimer.expired()) {
+    uint32_t isr  = engine.getIsrCount();
+    uint32_t nowS = millis() / 1000;
+    Serial.print("ISR/s: ");
+    Serial.println(nowS > 0 ? isr / nowS : 0);
+    // Očekávána hodnota: ~44100
+}
+```
+
+Výpočet RC pro timer (pro případ změny sample rate):
+
+```
+RC = (MCK / 2) / sampleRate
+   = 42 000 000 / 44 100
+   ≈ 952
+```
+
+Skutečná frekvence: `42 000 000 / 952 ≈ 44 117 Hz` (odchylka < 0,04 %).
+
+---
+
+## Známé chování a limity
+
+| Téma                | Popis                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `WaveType::SQUARE` | Generuje šum (LFSR), ne obdélník. Tabulka se nepoužívá.                                                              |
+| `BANDLIMITED_SAW`  | Přesahuje 12-bit rozsah — při plné amplitudě dochází k ořezu.                                                      |
+| Thread safety        | `noteOn` / `noteOff` chrání kritické sekce pomocí `__disable_irq()` / `__enable_irq()`.                        |
+| Amplituda            | `amplitude` v rozsahu 0–4095, ale součet hlasů není normalizován automaticky.                                       |
+| Flash vs RAM         | Tabulky jsou v `.rodata` (Flash). Na AVR by bylo nutné `PROGMEM` + `pgm_read_word()`. Na SAM3X8E stačí `const`. |
+| `MillisTimer`      | Předpokládá se vlastní implementace — není součástí tohoto repozitáře.                                          |

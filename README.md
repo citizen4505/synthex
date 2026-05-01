@@ -123,6 +123,14 @@ Tabulky jsou předgenerovány skriptem `generate_wavetables.py` a uloženy v `wa
 Každá tabulka: **2048 vzorků × 2 B = 4 096 B**
 Celkem: **5 × 4 096 B = 20 480 B = 20 KB Flash**
 
+![noise](img/noise.png "noise")
+
+![saw](img/saw.png "saw")
+
+![sine](img/sine.png "sine")
+
+![tooth](img/tooth.png "tooth")
+
 > **⚠ `WaveType::SQUARE`** — navzdory názvu a hodnotám v tabulce engine pro tento typ místo čtení z tabulky generuje **šum pomocí 32-bitového Galoisova LFSR**. Tabulka `BMC_TABLE_SQUARE` se za běhu nepoužívá. Pokud potřebuješ skutečný obdélník, přidej nový `WaveType` a uprav `processSample()`.
 
 > **⚠ `BANDLIMITED_SAW`** — amplituda přesahuje 12-bit rozsah (peak ±2292). Po vynásobení amplitudou může dojít k ořezu v DAC výstupu. Při použití doporučujeme snížit `amplitude`.
@@ -153,6 +161,8 @@ Příklady:
 | A4   | 440 Hz    | 42 452 000               |
 | C4   | 261 Hz    | 25 168 000               |
 | A5   | 880 Hz    | 84 904 000               |
+
+![osciloscope ASDR](img/osciloscope.webp "osciloscope ASDR")
 
 ---
 

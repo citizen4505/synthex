@@ -1,109 +1,70 @@
 #pragma once
 #include <Arduino.h>
 #include <stdint.h>
-#include <wavetables.h>   // <- pre-generované tabulky v Flash
+#include "wavetables.h"
 
 // ─────────────────────────────────────────────
 //  Konfigurace enginu
 // ─────────────────────────────────────────────
 #define SYNTHEX_SAMPLE_RATE     44100u
-#define SYNTHEX_VOICES          4u
+#define SYNTHEX_VOICES          8u          // fáze 4: 4 → 8 hlasů
 #define SYNTHEX_DAC_RESOLUTION  12u
 #define SYNTHEX_DAC_MAX         4095u
 #define SYNTHEX_DAC_MID         2048u
 
 // Fázový akumulátor — 32-bitový, horních 11 bitů = index (log2(2048) = 11)
-#define SYNTHEX_PHASE_SHIFT     (32u - 11u)         // = 21
+#define SYNTHEX_PHASE_SHIFT     (32u - 11u)   // = 21
 
-// Lineární interpolace — dolních 8 bitů frakce z akumulátoru
+// Lineární interpolace — bits [20:13] jako 8-bit frakce
 #define SYNTHEX_FRAC_SHIFT      (SYNTHEX_PHASE_SHIFT - 8u)  // = 13
 
-// ADSR obálka — Q16 fixed-point, plná škála = 4095 << 16
-// Proč Q16? Celočíselné přírůstky s dostatečnou rozlišovací schopností
-// bez float v ISR; výstup envAccum >> 16 dává přímo 0–4095.
-#define SYNTHEX_ENV_FULL        (static_cast<int32_t>(4095u << 16))  // = 268,369,920
+// Anti-click: 8 vzorků @ 44100 Hz ≈ 0.18 ms
+#define SYNTHEX_FADE_STEPS      8u
 
-// WaveType a SYNTHEX_WAVETABLE_SIZE jsou definovány v wavetables.h
-
-// ─────────────────────────────────────────────
-//  ADSR stavový automat
-//
-//  Přechody:
-//    noteOn()  → IDLE → ATTACK → DECAY → SUSTAIN
-//    noteOff() →                         SUSTAIN → RELEASE → IDLE
-//
-//  Speciální případ: noteOff() během ATTACK nebo DECAY okamžitě
-//  přejde do RELEASE z aktuální hladiny — žádný click.
-// ─────────────────────────────────────────────
-enum class AdsrState : uint8_t {
-    IDLE    = 0,   // hlas neaktivní, nepřispívá do mixu
-    ATTACK  = 1,   // náběh:  envAccum: 0 → FULL         (attackMs ms)
-    DECAY   = 2,   // pokles: envAccum: FULL → susTarget  (decayMs ms)
-    SUSTAIN = 3,   // výdrž:  envAccum drží susTarget dokud nepřijde noteOff()
-    RELEASE = 4,   // doznívání: envAccum: current → 0   (releaseMs ms)
-};
-
-// ─────────────────────────────────────────────
-//  Parametry ADSR obálky (nastavuje se přes setAdsr())
-// ─────────────────────────────────────────────
-struct AdsrParams {
-    uint16_t attackMs     =  10;    // doba náběhu  (ms)
-    uint16_t decayMs      = 100;    // doba poklesu (ms)
-    uint16_t sustainLevel = 3072;   // hladina výdrže, 0–4095 (výchozí 75 %)
-    uint16_t releaseMs    = 200;    // doba doznívání (ms)
-};
+// Maximální počet hlasů v jednom unison shluku
+#define SYNTHEX_MAX_UNISON      4u
 
 // ─────────────────────────────────────────────
 //  Jeden hlas syntezátoru
 // ─────────────────────────────────────────────
 struct Voice {
-    // ── Stavové příznaky ─────────────────────────────────────────────────────
-    volatile bool      active;      // hlas právě hraje (nebo doznívá)
-    volatile AdsrState adsrState;   // aktuální fáze obálky
+    // ── Stav ─────────────────────────────────
+    volatile bool     active;           // hlas hraje (nebo dojíždí fade-out)
+    volatile bool     fadingOut;        // probíhá fade-out; active=false po dojezdu
 
-    // ── Generátor (fázový akumulátor + parametry) ─────────────────────────────
-    volatile uint32_t  phaseAccum;
-    volatile uint32_t  phaseIncrement;
-    volatile uint16_t  amplitude;   // velocity / hlasitost (0–4095, 12-bit škála)
-    WaveType           waveType;
+    // ── Anti-click fade ───────────────────────
+    // 0 = ticho, SYNTHEX_FADE_STEPS = plná amplituda
+    volatile uint8_t  fadeStep;
 
-    // ── ADSR obálka — Q16 fixed-point ────────────────────────────────────────
-    //
-    //  Plná škála:  SYNTHEX_ENV_FULL = 4095 << 16 = 268 369 920
-    //  Výstup ISR:  envLevel = envAccum >> 16   (0–4095)
-    //
-    //  Schéma envAccum [31 ......... 16][15 ........ 0]
-    //                   └── envLevel ──┘└── frakce ──┘
-    //
-    //  envStep je podepsaný přírůstek na vzorek:
-    //    Attack:  kladný  (envAccum roste 0 → FULL)
-    //    Decay:   záporný (envAccum klesá FULL → susTarget)
-    //    Sustain: nula    (envAccum drží susTarget)
-    //    Release: záporný (envAccum klesá current → 0)
-    //
-    volatile int32_t   envAccum;      // aktuální hladina obálky (Q16)
-    volatile int32_t   envStep;       // přírůstek / vzorek (Q16, signed)
-    volatile uint32_t  envCountdown;  // vzorků do konce aktuální fáze
+    // ── Fázový akumulátor ─────────────────────
+    volatile uint32_t phaseAccum;
+    volatile uint32_t phaseIncrement;   // aktuální fázový přírůstek
 
-    // ── Předpočítané hodnoty pro přechody fází ────────────────────────────────
-    // Zapisuje noteOn() / noteOff() (mimo ISR), čte processSample() (ISR).
-    // Díky tomu ISR neprovádí žádné dělení ani float operace.
-    volatile int32_t   decStep;       // Q16/vzorek pro fázi Decay
-    volatile uint32_t  decSamples;    // délka fáze Decay [vzorky]
-    volatile int32_t   susTarget;     // Q16 cílová hladina Sustain
-    volatile uint32_t  relSamples;    // délka fáze Release [vzorky]
+    // ── Portamento ────────────────────────────
+    // targetIncrement : cílová frekvence přepočtená na přírůstek
+    // portaStep       : přírůstek k phaseIncrement za jeden vzorek
+    //                   0 = okamžitá změna (portamento vypnuto nebo dosaženo cíle)
+    // Pozitivní portaStep = stoupáme, negativní = klesáme.
+    volatile uint32_t targetIncrement;
+    volatile int32_t  portaStep;
 
-    // ── Parametry obálky ─────────────────────────────────────────────────────
-    AdsrParams adsr;    // nastavitelné přes setAdsr(); platí od příštího noteOn()
+    // ── Hlasitost ─────────────────────────────
+    volatile uint16_t amplitude;        // 0–4095 (12-bit škála)
+    WaveType          waveType;
+
+    // ── Voice stealing & unison ───────────────
+    // birthTime : logický čítač; nižší = starší = prioritní pro krádež
+    // noteId    : 0 = samostatný hlas, >0 = patří do unison skupiny
+    //             použij noteOffById(noteId) pro vypnutí celé skupiny
+    uint32_t          birthTime;
+    uint8_t           noteId;
 
     Voice()
-        : active(false), adsrState(AdsrState::IDLE),
+        : active(false), fadingOut(false), fadeStep(0),
           phaseAccum(0), phaseIncrement(0),
+          targetIncrement(0), portaStep(0),
           amplitude(SYNTHEX_DAC_MID), waveType(WaveType::SINE),
-          envAccum(0), envStep(0), envCountdown(0),
-          decStep(0), decSamples(1u), susTarget(0),
-          relSamples(static_cast<uint32_t>(200u * SYNTHEX_SAMPLE_RATE / 1000u))
-    {}
+          birthTime(0), noteId(0) {}
 };
 
 // ─────────────────────────────────────────────
@@ -113,42 +74,79 @@ class Synthex {
 public:
     static Synthex& getInstance();
 
-    // Inicializace — DAC + Timer
+    // ── Inicializace ──────────────────────────
     void begin();
 
-    // Nastaví ADSR parametry pro daný hlas (platné od příštího noteOn)
-    void setAdsr(uint8_t voiceIdx,
-                 uint16_t attackMs,
-                 uint16_t decayMs,
-                 uint16_t sustainLevel,
-                 uint16_t releaseMs);
+    // ─────────────────────────────────────────────────────────────────
+    //  API pro přehrávání
+    // ─────────────────────────────────────────────────────────────────
 
-    // noteOn: předpočítá ADSR kroky, spustí Attack fázi
+    // Explicitní index — zpětně kompatibilní s fází 1–3.
+    // Portamento se uplatní, pokud je hlas active a není fadingOut.
     void noteOn(uint8_t voiceIdx, float freqHz,
                 uint16_t amplitude = SYNTHEX_DAC_MID,
-                WaveType wave = WaveType::SINE);
+                WaveType wave      = WaveType::SINE);
 
-    // noteOff: spustí Release fázi z aktuální hladiny; active=false nastaví ISR
+    // Auto-alokace s voice stealing — vrátí použitý index hlasu.
+    // Strategie krádeže: 1) neaktivní → 2) nejtiší fading-out → 3) nejstarší
+    uint8_t noteOnAuto(float freqHz,
+                       uint16_t amplitude = SYNTHEX_DAC_MID,
+                       WaveType wave      = WaveType::SINE);
+
+    // Unison: unisonVoices hlasů rozladěných o ±detuneCents/2 kolem freqHz.
+    // Vrátí noteId pro skupinové noteOffById(); při 1 hlasu = bez detune.
+    //
+    //   unisonVoices = 2 : [-d/2, +d/2]
+    //   unisonVoices = 3 : [-d/2, 0, +d/2]
+    //   unisonVoices = 4 : rovnoměrně od -d/2 do +d/2
+    //
+    uint8_t noteOnUnison(float freqHz,
+                         uint8_t  unisonVoices = 2u,
+                         float    detuneCents  = 10.0f,
+                         uint16_t amplitude    = SYNTHEX_DAC_MID,
+                         WaveType wave         = WaveType::SINE);
+
+    // Fade-out jednoho hlasu (explicitní index)
     void noteOff(uint8_t voiceIdx);
 
-    // Volá se výhradně z ISR (TC3_Handler) — 44100× za sekundu
-    void processSample();
+    // Fade-out celé unison skupiny (pro ID vrácené noteOnUnison)
+    void noteOffById(uint8_t noteId);
 
+    // ─────────────────────────────────────────────────────────────────
+    //  Parametry
+    // ─────────────────────────────────────────────────────────────────
+
+    // Portamento: lineární glide v ms; 0 = okamžitá změna frekvence.
+    // Platí pro všechny hlasy globálně.
+    void  setPortamento(float timeMs);
+    float getPortamento() const { return _portaTimeMs; }
+
+    // ── ISR ──────────────────────────────────
+    void processSample();   // volá výhradně TC3_Handler
+
+    // ── Diagnostika ──────────────────────────
     static uint32_t freqToIncrement(float freqHz);
-
-    uint32_t getIsrCount() const { return _isrCount; }
+    uint32_t        getIsrCount() const { return _isrCount; }
 
 private:
     Synthex();
     Synthex(const Synthex&)            = delete;
     Synthex& operator=(const Synthex&) = delete;
 
-    void _initDACC();
-    void _initTimer();
+    void    _initDACC();
+    void    _initTimer();
 
+    // Vybere hlas pro nový tón (voice stealing při plné polyfónii)
+    uint8_t _findFreeVoice();
+
+    // ── Data ─────────────────────────────────
     Voice    _voices[SYNTHEX_VOICES];
     uint32_t _isrCount;
-    uint32_t _lfsrState;    // Galoisův LFSR pro WaveType::SQUARE (noise)
+    uint32_t _lfsrState;        // Galoisův LFSR pro WaveType::SQUARE (noise)
+
+    float    _portaTimeMs;      // globální čas portamenta [ms]
+    uint32_t _voiceClock;       // monotónní čítač; přičítá se při každém noteOn
+    uint8_t  _nextNoteId;       // rotuje 1–255; 0 je rezervováno jako "bez skupiny"
 };
 
 #ifdef __cplusplus

@@ -1,139 +1,168 @@
 /*
- * main.cpp — Synthex demo: ADSR obálka (Fáze 3)
+ * main.cpp — demo fáze 4
  *
- * Hardware: SAM3X8E (Arduino Due), 84 MHz
- * DAC výstup: pin DAC1 (PA3)
+ * Sekvence (každý oddíl trvá ~4 s, pak se smyčka opakuje):
  *
- * Tři ADSR presety demonstrující rozdílný charakter zvuku:
+ *   A) Portamento melody
+ *      Jeden hlas klouže lineárně přes pentatonickou stupnici (50 ms glide).
+ *      Hlas se neresetuje → slyšíš plynulý legato glide bez kliků.
  *
- *   Hlas 0 — Piano:    krátký attack, výrazný decay, nízký sustain, střední release
- *   Hlas 1 — Organ:    okamžitý attack, žádný decay, plný sustain, krátký release
- *   Hlas 2 — Pad:      dlouhý attack, pomalý decay, vysoký sustain, dlouhý release
+ *   B) Unison akordy
+ *      noteOnUnison() spustí 3 hlasy rozladěné o ±10 centů.
+ *      Výsledek: charakteristické „chorus" zahušťování tónu.
+ *      Celá skupina se zastaví jediným noteOffById().
  *
- * Melodie: C4–E4–G4 (kvinta) hraje v kánonu na všech třech hlasech,
- *          každý s jiným zvukovým charakterem.
+ *   C) Rychlá arpeggio — voice stealing
+ *      noteOnAuto() spouští notu každých 80 ms bez noteOff.
+ *      Po 8 not jsou všechny hlasy plné → engine krade nejstarší.
+ *      V Sériové konzoli uvidíš, který hlas byl ukraden.
+ *
+ * Amplituda je záměrně nízká (150/4095) — při 8 aktivních hlasech
+ * součet může saturovat DAC (4095), engine to clampuje, ale
+ * pro čistý mix přizpůsob amplitude počtu souběžných hlasů:
+ *   max_safe = 4095 / (SYNTHEX_VOICES * ~0.7)  ≈ 730 pro 8 hlasů
  */
+
 #include "Synthex.h"
 #include "MillisTimer.h"
 
-// ─────────────────────────────────────────────
-//  ADSR presety
-//  Parametry: (attack ms, decay ms, sustain 0–4095, release ms)
-// ─────────────────────────────────────────────
-struct Preset {
-    uint16_t attackMs;
-    uint16_t decayMs;
-    uint16_t sustainLevel;
-    uint16_t releaseMs;
-    WaveType wave;
-    const char* name;
-};
-
-static const Preset PRESETS[3] = {
-    //  A      D     S      R      tvar          název
-    {   10,  300,  800,  400,  WaveType::BANDLIMITED_SAW,  "Piano"  },
-    {    0,    0, 4095,   80,  WaveType::TRIANGLE,          "Organ"  },
-    {  600,  800, 3200, 1200,  WaveType::SINE,              "Pad"    },
-};
-
-// Frekvence not (Hz) — C4, E4, G4, C5
-static const float NOTES[] = { 261.63f, 329.63f, 392.00f, 523.25f };
-static const uint8_t NOTE_COUNT = 4;
-
-// Amplitudy presetů (0–4095) — organ tišší, aby nepřebíjel
-static const uint16_t AMPLITUDES[3] = { 2800, 1800, 2200 };
-
 Synthex& engine = Synthex::getInstance();
 
+// ── Pentatonická stupnice A dur ──────────────────────────────────────────────
+static const float PENTA[] = {
+    220.0f,   // A3
+    261.6f,   // C4
+    293.7f,   // D4
+    329.6f,   // E4
+    392.0f,   // G4
+    440.0f,   // A4
+    523.3f,   // C5
+    587.3f,   // D5
+};
+static constexpr uint8_t PENTA_LEN = sizeof(PENTA) / sizeof(PENTA[0]);
+
+// ── Drobná melodie pro portamento sekci (indexy do PENTA) ────────────────────
+static const uint8_t MELODY[] = { 0, 2, 4, 5, 4, 2, 1, 0, 3, 5, 7, 6 };
+static constexpr uint8_t MELODY_LEN = sizeof(MELODY) / sizeof(MELODY[0]);
+
+// ─────────────────────────────────────────────
+//  setup
+// ─────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    while (!Serial && millis() < 3000) {}   // čekej na Serial (max 3 s)
-    delay(100); // stabilizace DAC
-    
+    while (!Serial && millis() < 3000) {}
+    delay(100);
+
     engine.begin();
 
-// Nastav ADSR pro každý hlas
-    for (uint8_t v = 0; v < 3; ++v) {
-        const Preset& p = PRESETS[v];
-        engine.setAdsr(v, p.attackMs, p.decayMs, p.sustainLevel, p.releaseMs);
-        Serial.print("Voice ");
-        Serial.print(v);
-        Serial.print(" — ");
-        Serial.print(p.name);
-        Serial.print("  A="); Serial.print(p.attackMs);
-        Serial.print(" D="); Serial.print(p.decayMs);
-        Serial.print(" S="); Serial.print(p.sustainLevel);
-        Serial.print(" R="); Serial.println(p.releaseMs);
-    }
-
-    Serial.println("=== Synthex — Fáze 3: ADSR ===");
+    Serial.println("╔══════════════════════════════════╗");
+    Serial.println("║   Synthex — Fáze 4 · Polyfonie   ║");
+    Serial.println("╚══════════════════════════════════╝");
+    Serial.print("Hlasy:       "); Serial.println(SYNTHEX_VOICES);
+    Serial.print("Sample rate: "); Serial.print(SYNTHEX_SAMPLE_RATE);
+    Serial.println(" Hz");
+    Serial.println();
+    Serial.println("Sekvence:  A) Portamento  B) Unison  C) Voice stealing");
+    Serial.println("────────────────────────────────────");
 }
 
 // ─────────────────────────────────────────────
+//  loop
+// ─────────────────────────────────────────────
 void loop() {
-    // Kánon: každý hlas hraje notu 300 ms za předchozím
-    //  Hlas 0: note on  @ 0 ms, note off @ 400 ms
-    //  Hlas 1: note on  @ 300 ms, note off @ 700 ms
-    //  Hlas 2: note on  @ 600 ms, note off @ 1000 ms
-    //  Pauza do 1600 ms, pak opakuj s další notou
+    static MillisTimer eventTimer(333, false);   // přepínač událostí
+    static uint8_t     step       = 0;
+    static uint8_t     lastNoteId = 0;
 
-    static MillisTimer seqTimer(100, false);
-    static uint8_t  stage    = 0;
-    static uint8_t  noteIdx  = 0;
+    if (!eventTimer.expired()) return;
+    eventTimer.reset();
 
-    if (!seqTimer.expired()) return;
-    seqTimer.reset();
-    ++stage;
+    step++;
 
-    switch (stage) {
+    // ════════════════════════════════════════════════════
+    //  A) PORTAMENTO MELODY  (kroky 1–12, ~4 s)
+    //     50ms glide, hlas 0, BANDLIMITED_SAW
+    // ════════════════════════════════════════════════════
+    if (step == 1) {
+        engine.setPortamento(50.0f);
+        Serial.println("\n── A) Portamento melody (50 ms glide) ──");
+    }
 
-        // ── Hlas 0 ON ──────────────────────────────────────
-        case 1:
-            engine.noteOn(0, NOTES[noteIdx], AMPLITUDES[0], PRESETS[0].wave);
-            Serial.print("[+0 ms] V0 ON  ");
-            Serial.print(NOTES[noteIdx]); Serial.println(" Hz");
-            break;
+    if (step >= 1 && step <= MELODY_LEN) {
+        float freq = PENTA[ MELODY[step - 1] ];
+        engine.noteOn(0, freq, 350, WaveType::BANDLIMITED_SAW);
 
-        // ── Hlas 1 ON ──────────────────────────────────────
-        case 4:
-            engine.noteOn(1, NOTES[(noteIdx + 2) % NOTE_COUNT], AMPLITUDES[1], PRESETS[1].wave);
-            Serial.print("[+300 ms] V1 ON  ");
-            Serial.print(NOTES[(noteIdx + 2) % NOTE_COUNT]); Serial.println(" Hz");
-            break;
+        Serial.print("  [porta] hlas 0 → ");
+        Serial.print(freq, 1);
+        Serial.println(" Hz");
+    }
 
-        // ── Hlas 0 OFF ─────────────────────────────────────
-        case 5:
-            engine.noteOff(0);
-            Serial.println("[+400 ms] V0 OFF → Release");
-            break;
+    if (step == MELODY_LEN + 1) {
+        engine.noteOff(0);
+        engine.setPortamento(0.0f);   // vypni portamento před unison sekcí
+    }
 
-        // ── Hlas 2 ON ──────────────────────────────────────
-        case 7:
-            engine.noteOn(2, NOTES[(noteIdx + 1) % NOTE_COUNT], AMPLITUDES[2], PRESETS[2].wave);
-            Serial.print("[+600 ms] V2 ON  ");
-            Serial.print(NOTES[(noteIdx + 1) % NOTE_COUNT]); Serial.println(" Hz");
-            break;
+    // ════════════════════════════════════════════════════
+    //  B) UNISON AKORDY  (kroky 14–21, ~2.5 s)
+    //     3 hlasy, ±10 centů detune
+    // ════════════════════════════════════════════════════
+    if (step == 14) {
+        Serial.println("\n── B) Unison akordy (3 hlasy, 20 centů spread) ──");
+    }
 
-        // ── Hlas 1 OFF ─────────────────────────────────────
-        case 8:
-            engine.noteOff(1);
-            Serial.println("[+700 ms] V1 OFF → Release");
-            break;
+    if (step >= 14 && step <= 21) {
+        // Zastav předchozí akord
+        if (lastNoteId != 0) engine.noteOffById(lastNoteId);
 
-        // ── Hlas 2 OFF ─────────────────────────────────────
-        case 11:
-            engine.noteOff(2);
-            Serial.println("[+1000 ms] V2 OFF → Release");
-            break;
+        float freq = PENTA[(step - 14) % PENTA_LEN];
 
-        // ── Pauza, pak další nota ───────────────────────────
-        case 17:
-            noteIdx = (noteIdx + 1) % NOTE_COUNT;
-            stage   = 0;
-            Serial.println("--- next ---");
-            break;
+        // 3 hlasy: [-10, 0, +10] centů
+        lastNoteId = engine.noteOnUnison(freq, 3, 20.0f, 220, WaveType::BANDLIMITED_SAW);
 
-        default:
-            break;
+        Serial.print("  [unison] ");
+        Serial.print(freq, 1);
+        Serial.print(" Hz × 3 hlasy → noteId=");
+        Serial.println(lastNoteId);
+    }
+
+    if (step == 22) {
+        if (lastNoteId != 0) { engine.noteOffById(lastNoteId); lastNoteId = 0; }
+    }
+
+    // ════════════════════════════════════════════════════
+    //  C) VOICE STEALING  (kroky 24–39, ~5 s)
+    //     Spouštíme více not než je hlasů; engine krade.
+    //
+    //  Proč to funguje:
+    //    noteOnAuto() volá _findFreeVoice() před každým noteOn.
+    //    Po SYNTHEX_VOICES (8) souběžných not jsou všechny hlasy plné.
+    //    Další noteOnAuto() ukradne nejstarší — v sériové konzoli uvidíš
+    //    stejný index hlasu znovu pro novou notu.
+    // ════════════════════════════════════════════════════
+    if (step == 24) {
+        Serial.println("\n── C) Voice stealing (noteOnAuto, bez noteOff) ──");
+        Serial.println("     Hlasy 0–7 se postupně zaplní, pak se kradou.");
+    }
+
+    if (step >= 24 && step <= 39) {
+        uint8_t pIdx = (step - 24) % PENTA_LEN;
+        float   freq = PENTA[pIdx];
+        uint8_t vi   = engine.noteOnAuto(freq, 150, WaveType::SINE);
+
+        Serial.print("  [steal] noteOnAuto → hlas ");
+        Serial.print(vi);
+        Serial.print("  @ ");
+        Serial.print(freq, 1);
+        Serial.println(" Hz");
+    }
+
+    // ════════════════════════════════════════════════════
+    //  Reset sekvence
+    // ════════════════════════════════════════════════════
+    if (step > 39) {
+        for (uint8_t i = 0; i < SYNTHEX_VOICES; ++i) engine.noteOff(i);
+        step = 0;
+        lastNoteId = 0;
+        Serial.println("\n════════ restart smyčky ════════");
     }
 }

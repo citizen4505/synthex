@@ -29,7 +29,7 @@
 Synthex& engine = Synthex::getInstance();
 
 // ── Pentatonická stupnice A dur ──────────────────────────────────────────────
-static const float PENTA[] = {
+static const float PENTATONIC[] = {
     220.0f,   // A3
     261.6f,   // C4
     293.7f,   // D4
@@ -39,10 +39,11 @@ static const float PENTA[] = {
     523.3f,   // C5
     587.3f,   // D5
 };
-static constexpr uint8_t PENTA_LEN = sizeof(PENTA) / sizeof(PENTA[0]);
+static constexpr uint8_t PENTA_LEN = sizeof(PENTATONIC) / sizeof(PENTATONIC[0]);
 
-// ── Drobná melodie pro portamento sekci (indexy do PENTA) ────────────────────
-static const uint8_t MELODY[] = { 0, 2, 4, 5, 4, 2, 1, 0, 3, 5, 7, 6 };
+// ── Drobná melodie pro portamento sekci (indexy do PENTATONIC) ────────────────────
+//static const uint8_t MELODY[] = { 0, 2, 4, 5, 4, 2, 1, 0, 3, 5, 7, 6 };
+static const uint8_t MELODY[] = { 0, 1, 2, 3, 4, 5, 6, 7, 0, 0, 0, 0 };
 static constexpr uint8_t MELODY_LEN = sizeof(MELODY) / sizeof(MELODY[0]);
 
 // ─────────────────────────────────────────────
@@ -89,7 +90,7 @@ void loop() {
     }
 
     if (step >= 1 && step <= MELODY_LEN) {
-        float freq = PENTA[ MELODY[step - 1] ];
+        float freq = PENTATONIC[ MELODY[step - 1] ];
         engine.noteOn(0, freq, 350, WaveType::BANDLIMITED_SAW);
 
         Serial.print("  [porta] hlas 0 → ");
@@ -114,7 +115,7 @@ void loop() {
         // Zastav předchozí akord
         if (lastNoteId != 0) engine.noteOffById(lastNoteId);
 
-        float freq = PENTA[(step - 14) % PENTA_LEN];
+        float freq = PENTATONIC[(step - 14) % PENTA_LEN];
 
         // 3 hlasy: [-10, 0, +10] centů
         lastNoteId = engine.noteOnUnison(freq, 3, 20.0f, 220, WaveType::BANDLIMITED_SAW);
@@ -146,7 +147,7 @@ void loop() {
 
     if (step >= 24 && step <= 39) {
         uint8_t pIdx = (step - 24) % PENTA_LEN;
-        float   freq = PENTA[pIdx];
+        float   freq = PENTATONIC[pIdx];
         uint8_t vi   = engine.noteOnAuto(freq, 150, WaveType::SINE);
 
         Serial.print("  [steal] noteOnAuto → hlas ");

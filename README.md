@@ -93,16 +93,16 @@ V každém přerušení se spočítá jeden vzorek za každý aktivní hlas, vý
 
 ## Hardware
 
-| Parametr | Hodnota |
-|---|---|
-| Procesor | SAM3X8E (ARM Cortex-M3) |
-| Takt | 84 MHz |
-| Deska | Arduino Due |
-| DAC výstup | `DAC1` — pin PA3 |
-| Rozlišení DAC | 12 bit (0–4095) |
-| Vzorkovací kmitočet | 44 100 Hz |
-| Časovač | TC1 / Channel 0 → TC3_IRQn |
-| Prescaler | MCK/2 = 42 MHz → RC = 952 |
+| Parametr              | Hodnota                     |
+| --------------------- | --------------------------- |
+| Procesor              | SAM3X8E (ARM Cortex-M3)     |
+| Takt                  | 84 MHz                      |
+| Deska                 | Arduino Due                 |
+| DAC výstup           | `DAC1` — pin PA3         |
+| Rozlišení DAC       | 12 bit (0–4095)            |
+| Vzorkovací kmitočet | 44 100 Hz                   |
+| Časovač             | TC1 / Channel 0 → TC3_IRQn |
+| Prescaler             | MCK/2 = 42 MHz → RC = 952  |
 
 ---
 
@@ -128,14 +128,14 @@ Definovány v `Synthex.h`:
 
 Tabulky jsou generovány skriptem `wav_to_wavetable.py` a uloženy v `wavetables.h` jako `const int16_t[]` — tedy přímo ve **Flash paměti** (`.rodata`). Za běhu se nekopírují do RAM.
 
-| Index | `WaveType` | Popis | Min | Max |
-|---|---|---|---|---|
-| 0 | `SINE` | Sinus | −2047 | +2047 |
-| 1 | `SAW` | Pilový průběh | −2047 | +2045 |
-| 2 | `SQUARE` | ⚠ Viz poznámka níže | −2047 | +2047 |
-| 3 | `TRIANGLE` | Trojúhelník | −2047 | +2047 |
-| 4 | `BANDLIMITED_SAW` | Pilový průběh bez aliasingu | −2292 | +2292 |
-| 5 | `SAMPLE` | Uživatelský vzorek (WAV import) | −2048 | +2047 |
+| Index | `WaveType`        | Popis                             | Min    | Max   |
+| ----- | ------------------- | --------------------------------- | ------ | ----- |
+| 0     | `SINE`            | Sinus                             | −2047 | +2047 |
+| 1     | `SAW`             | Pilový průběh                  | −2047 | +2045 |
+| 2     | `SQUARE`          | ⚠ Viz poznámka níže           | −2047 | +2047 |
+| 3     | `TRIANGLE`        | Trojúhelník                     | −2047 | +2047 |
+| 4     | `BANDLIMITED_SAW` | Pilový průběh bez aliasingu    | −2292 | +2292 |
+| 5     | `SAMPLE`          | Uživatelský vzorek (WAV import) | −2048 | +2047 |
 
 Každá tabulka: **2048 vzorků × 2 B = 4 096 B**
 Celkem: **6 × 4 096 B = 24 576 B = 24 KB Flash**
@@ -183,11 +183,11 @@ uint32_t inc = (uint32_t)(freqHz * k);
 Příklady:
 
 | Nota | Frekvence | phaseIncrement (approx.) |
-|---|---|---|
-| A3 | 220 Hz | 21 226 000 |
-| C4 | 261.6 Hz | 25 232 000 |
-| A4 | 440 Hz | 42 452 000 |
-| A5 | 880 Hz | 84 904 000 |
+| ---- | --------- | ------------------------ |
+| A3   | 220 Hz    | 21 226 000               |
+| C4   | 261.6 Hz  | 25 232 000               |
+| A4   | 440 Hz    | 42 452 000               |
+| A5   | 880 Hz    | 84 904 000               |
 
 ---
 
@@ -303,11 +303,11 @@ uint8_t id = engine.noteOnUnison(440.0f, 3, 20.0f, 220, WaveType::BANDLIMITED_SA
 ```
 
 | `unisonVoices` | Rozložení v centech (symetrické) |
-|---|---|
-| 1 | `[0]` |
-| 2 | `[-d/2, +d/2]` |
-| 3 | `[-d/2, 0, +d/2]` |
-| 4 | `[-d/2, -d/6, +d/6, +d/2]` |
+| ---------------- | ----------------------------------- |
+| 1                | `[0]`                             |
+| 2                | `[-d/2, +d/2]`                    |
+| 3                | `[-d/2, 0, +d/2]`                 |
+| 4                | `[-d/2, -d/6, +d/6, +d/2]`        |
 
 Maximum: `SYNTHEX_MAX_UNISON = 4`.
 
@@ -395,12 +395,12 @@ MillisTimer oneShot(2000);
 if (oneShot.expired()) { doThing(); oneShot.reset(); }
 ```
 
-| Metoda | Popis |
-|---|---|
-| `expired()` | `true` pokud uplynul interval; v autoReset režimu posune referenci o přesně `_interval` |
-| `reset()` | Posune referenci na aktuální čas (manuální režim) |
-| `remaining()` | Zbývající ms do příštího vypršení |
-| `setInterval(ms)` | Dynamická změna intervalu |
+| Metoda              | Popis                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `expired()`       | `true` pokud uplynul interval; v autoReset režimu posune referenci o přesně `_interval` |
+| `reset()`         | Posune referenci na aktuální čas (manuální režim)                                        |
+| `remaining()`     | Zbývající ms do příštího vypršení                                                     |
+| `setInterval(ms)` | Dynamická změna intervalu                                                                    |
 
 ---
 
@@ -469,13 +469,23 @@ Skutečná frekvence: `42 000 000 / 952 ≈ 44 117 Hz` (odchylka < 0,04 %).
 
 ## Známé chování a limity
 
-| Téma | Popis |
-|---|---|
-| `WaveType::SQUARE` | Generuje šum (32-bit Galoisův LFSR), ne obdélník. `SYNTHEX_TABLE_SQUARE` se za běhu nepoužívá. |
-| `BANDLIMITED_SAW` | Peak ±2292 překračuje 12-bit rozsah (`peak_error=+245`). Při plné amplitudě dochází k ořezu. |
-| Mix clipping | Součet hlasů není normalizován. Bezpečná amplituda pro N hlasů: `4095 / N`. Overflow check: `8 hlasů × 2292 × 4095 × 8 ≈ 600 M < INT32_MAX` ✓ |
-| Portamento | Platí globálně pro všechny hlasy. `portaStep` je integer — při velmi malém frekvenčním skoku zaokrouhlení na ±1. |
-| Voice stealing | `_findFreeVoice()` čte `volatile` data mimo ISR → krátký window neurčitosti je akceptovatelný. |
-| Thread safety | `noteOn` / `noteOff` / `noteOffById` chrání kritické sekce pomocí `__disable_irq()` / `__enable_irq()`. |
-| `_nextNoteId` | Rotuje 1–255; při 255 notách bez restartu může dojít ke kolizi ID — v praxi zanedbatelné. |
-| Flash vs RAM | Tabulky jsou v `.rodata` (Flash). Na AVR by bylo nutné `PROGMEM` + `pgm_read_word()`. Na SAM3X8E stačí `const`. |
+| Téma                | Popis                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WaveType::SQUARE` | Generuje šum (32-bit Galoisův LFSR), ne obdélník.`SYNTHEX_TABLE_SQUARE` se za běhu nepoužívá.                                                       |
+| `BANDLIMITED_SAW`  | Peak ±2292 překračuje 12-bit rozsah (`peak_error=+245`). Při plné amplitudě dochází k ořezu.                                                       |
+| Mix clipping         | Součet hlasů není normalizován. Bezpečná amplituda pro N hlasů:`4095 / N`. Overflow check: `8 hlasů × 2292 × 4095 × 8 ≈ 600 M < INT32_MAX` ✓ |
+| Portamento           | Platí globálně pro všechny hlasy.`portaStep` je integer — při velmi malém frekvenčním skoku zaokrouhlení na ±1.                                  |
+| Voice stealing       | `_findFreeVoice()` čte `volatile` data mimo ISR → krátký window neurčitosti je akceptovatelný.                                                      |
+| Thread safety        | `noteOn` / `noteOff` / `noteOffById` chrání kritické sekce pomocí `__disable_irq()` / `__enable_irq()`.                                         |
+| `_nextNoteId`      | Rotuje 1–255; při 255 notách bez restartu může dojít ke kolizi ID — v praxi zanedbatelné.                                                             |
+| Flash vs RAM         | Tabulky jsou v `.rodata` (Flash). Na AVR by bylo nutné `PROGMEM` + `pgm_read_word()`. Na SAM3X8E stačí `const`.                                    |
+
+## TODO
+
+* ADSR. Přímé ovládání s vlastnímy potenciometry.
+* Portamento. Přímé ovládání glide time.
+* Detune. Nastavování unison spreadu.
+* Oktávy. Přepínání oktáv pro 4x4 touchpad klávesnici.
+* Recording. Zapínání nahrávání ve stylu live performance nebo krokového editování.
+* RC lowpass filtr pro DAC výstup.
+* Předzesilovací výstupní stupeň, pro normalizaci výstupního signálu na LINE 2Vrms.

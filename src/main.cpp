@@ -1,149 +1,226 @@
 /*
- * main.cpp — Synthex + Pots + Display
+ * main.cpp — Synthex + Step Sekvencer + LCD 1602 Display
  *
- * Sekvence (step 1–MELODY_LEN, pak reset):
- *   Portamento melodie hraje automaticky.
- *   Vsechny parametry (vlna, hlasitost, portamento, tempo)
- *   jsou rizeny potenciometry v realnem case.
- *   LCD displej zobrazuje aktualni stav.
+ * ═══════════════════════════════════════════════════════════════════
+ *  PŘEHLED SYSTÉMU
+ * ═══════════════════════════════════════════════════════════════════
  *
- * Tok dat v loop():
+ *  Synthex   — 8hlasý wavetable syntezátor (ISR @ 44100 Hz)
+ *  Sequencer — 16-krokový step sekvencer, 4 patterny
+ *  Pots      — 4 potenciometry (volume, portamento, wavetype, tempo)
+ *  Display   — HD44780 LCD 1602 (16×2), 4-bitový mód, @ 20 Hz
  *
- *   Pots::update()          cteni ADC (max 1x za 20 ms)
- *       |
- *       +-> engine.setPortamento()   global glide
- *       |
- *   eventTimer (tempoMs)    krok sekvenceru
- *       |
- *       +-> engine.noteOn()          nota s aktualnimi pot hodnotami
- *       |
- *   Display::update()        obnova LCD (max 1x za 100 ms)
+ * ═══════════════════════════════════════════════════════════════════
+ *  HARDWARE — Arduino Due / SAM3X8E
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  DAC výstup:     DAC1 (pin DAC1)  → audio
+ *  Potenciometry:  A0 volume  A1 portamento  A2 wavetype  A3 tempo
+ *  LCD:             RS=8 EN=9 D4=10 D5=11 D6=12 D7=7 (4-bitovy mod)
+ *  Transport:      Pin 2  PLAY/PAUSE (tlačítko, INPUT_PULLUP)
+ *                  Pin 3  STOP       (tlačítko, INPUT_PULLUP)
+ *                  Pin 4  PATTERN+   (tlačítko, INPUT_PULLUP)
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ *  SEKVENCER — PATERNY
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  PAT 0  A3 pentatonická moll  (blues/funk groove)
+ *  PAT 1  D4 dórská             (jazzový vzestup + sestup)
+ *  PAT 2  C4 bluesová           (synkopy + blue note F#4)
+ *  PAT 3  Prázdný               (pro live editaci)
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ *  OVLÁDÁNÍ POTENCIOMETRY
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  A0 VOLUME     → globální amplituda všech kroků (0–4095)
+ *  A1 PORTAMENTO → glide čas sekvenceru (0–500 ms)
+ *  A2 WAVETYPE   → globální přepis typu vlny (SINE/SAW/NOISE/…)
+ *  A3 TEMPO      → tempo sekvenceru (80–500 ms/krok, ~30–187 BPM)
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ *  ARCHITEKTURA LOOP()
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  Bez delay(), bez blocking. Každá komponenta má vlastní timer.
+ *
+ *  Priority v loop():
+ *    1. seq.update()      — krokový/gate timer (bezprostřední dopad na zvuk)
+ *    2. pots.update()     — ADC + EMA každých 20 ms
+ *    3. _readButtons()    — transport tlačítka každých 50 ms (debounce)
+ *    4. disp.refresh()    — LCD překreslení každých 50 ms (~20 Hz)
+ *    5. Serial (debug)    — volitelný výpis každou sekundu
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ *  PAMĚŤ (přibližné hodnoty, Arduino Due 512 KB Flash / 96 KB RAM)
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ *  wavetables.h (Flash .rodata):
+ *    5 tabulek × 2048 × 2 B = 20 480 B (20 KB)
+ *
+ *  SeqStep pole (RAM .bss):
+ *    4 × 16 × sizeof(SeqStep) ≈ 4 × 16 × 12 = 768 B
+ *
+ *  LCD 1602 nepotřebuje frame buffer (přímý zápis znaků):
+ *    HD44780 DDRAM: 80 B (2 × 40 znaků) — žádná RAM na Due
+ *
+ *  Celkem RAM ≈ 768 + 1024 + stack + ostatní ≈ ~5 KB → v pohodě
  */
 
 #include "Synthex.h"
-#include "MillisTimer.h"
-#include "Pots.h"
+#include "Sequencer.h"
 #include "Display.h"
-
-Synthex& engine  = Synthex::getInstance();
-Pots&    pots    = Pots::getInstance();
-Display& display = Display::getInstance();
-
-// ── Melodie ─────────────────────────────────────────────────────
-// Indexy do CHROMATIC[] — 0 = ticho, zbytek = noty
-static const float CHROMATIC[] = {
-    0.0f,    // 0  ticho
-    16.35f,  // 1  C0
-    17.32f,  // 2  C#0
-    18.35f,  // 3  D0
-    19.45f,  // 4  D#0
-    20.60f,  // 5  E0
-    21.83f,  // 6  F0
-    23.12f,  // 7  F#0
-    24.50f,  // 8  G0
-    25.96f,  // 9  G#0
-    27.50f,  // 10 A0
-    29.14f,  // 11 A#0
-    30.87f,  // 12 H0
-    32.70f,  // 13 C1
-    34.64f,  // 14 C#1
-    36.69f,  // 15 D1
-    38.87f   // 16 D#1
-};
-
-static const uint8_t MELODY[] = {
-    16, 4, 9, 4, 16, 4, 9, 4,
-    16, 4, 9, 7, 16, 4, 9, 4,
-    16,16, 9,16, 16,16, 9,16,
-    16,16, 9, 9, 16,16, 9, 9
-};
-static constexpr uint8_t MELODY_LEN = sizeof(MELODY) / sizeof(MELODY[0]);
-
+#include "Pots.h"
+#include "MillisTimer.h"
 
 // ─────────────────────────────────────────────
-//  setup
+//  Tlačítka (INPUT_PULLUP — stisk = LOW)
 // ─────────────────────────────────────────────
-void setup() {
-    delay(100);
+#define BTN_PLAY_PAUSE  10
+#define BTN_STOP        11
+#define BTN_PATTERN     12
 
-    engine.begin();   // DAC + timer ISR — musi byt prvni
-    pots.begin();     // ADC init + prvni cteni
-    display.begin();  // LCD init + uvitaci zprava (blokuje 1,5 s)
+// ─────────────────────────────────────────────
+//  Globální reference na singletony
+//  (zapsáno zde pro přehlednost; getInstance() je inlinováno)
+// ─────────────────────────────────────────────
+static Synthex&   engine = Synthex::getInstance();
+static Sequencer& seq    = Sequencer::getInstance();
+static Pots&      pots   = Pots::getInstance();
+static Display&   disp   = Display::getInstance();
 
-    // Prvni zobrazeni aktualnich hodnot potu
-    display.setWaveType  (pots.waveType());
-    display.setVolume    (pots.amplitude());
-    display.setPortamento(pots.portamento());
-    display.setTempoMs   (pots.tempoMs());
-    display.forceRedraw();
+// ─────────────────────────────────────────────
+//  Čtení tlačítek s debouncem
+//  Vrátí true pokud bylo tlačítko práve stisknuto (sestupná hrana).
+//
+//  Jak funguje software debounce:
+//    Uložíme předchozí stav každého tlačítka.
+//    Pokud aktuální stav == LOW a předchozí == HIGH → sestupná hrana.
+//    Kontrolujeme max každých BTN_POLL_MS → implicitní debounce.
+// ─────────────────────────────────────────────
+static bool _buttonPressed(uint8_t pin, uint8_t& lastState) {
+    const uint8_t current = digitalRead(pin);
+    const bool    pressed = (current == LOW) && (lastState == HIGH);
+    lastState = current;
+    return pressed;
 }
 
 // ─────────────────────────────────────────────
-//  loop
+//  setup()
+// ─────────────────────────────────────────────
+void setup() {
+    delay(100);   // stabilizace napájení
+
+    Serial.begin(115200);
+    Serial.println(F("=== Synthex Sequencer v5 ==="));
+
+    // ── Tlačítka ──────────────────────────────
+    pinMode(BTN_PLAY_PAUSE, INPUT_PULLUP);
+    pinMode(BTN_STOP,       INPUT_PULLUP);
+    pinMode(BTN_PATTERN,    INPUT_PULLUP);
+
+    // ── Synthex engine ────────────────────────
+    engine.begin();
+    Serial.println(F("[OK] Synthex engine"));
+
+    // ── Potenciometry ─────────────────────────
+    pots.begin();
+    Serial.println(F("[OK] Pots"));
+
+    // ── Sekvencer ─────────────────────────────
+    seq.begin(engine);
+
+    // Globální přepisy z potenciometrů (první čtení)
+    seq.useGlobalWave(true,  pots.waveType());
+    seq.useGlobalAmplitude(true, pots.amplitude());
+    seq.setTempoMs(pots.tempoMs());
+    engine.setPortamento(pots.portamento());
+
+    // Spusť sekvencer
+    seq.play();
+    Serial.println(F("[OK] Sequencer — PLAYING"));
+
+    // ── Display ───────────────────────────────
+    if (disp.begin()) {
+        Serial.println(F("[OK] Display LCD 1602"));
+    } else {
+        Serial.println(F("[WARN] Display begin failed"));
+    }
+
+    Serial.print(F("Tempo: "));
+    Serial.print(seq.tempoMs());
+    Serial.print(F(" ms/step = "));
+    Serial.print(seq.bpm());
+    Serial.println(F(" BPM"));
+}
+
+// ─────────────────────────────────────────────
+//  loop()
 // ─────────────────────────────────────────────
 void loop() {
-    // ── 1. Cteni potenciometru ───────────────────────────────────
-    // Pots::update() polluje ADC max 1x za POTS_POLL_MS (20 ms).
-    // Vraci true pokud se nektery parametr zmenil.
-    const bool potsChanged = pots.update();
+    // ── 1. Sekvencer — musí být co nejdříve v loop() ──────────
+    //       processSample() běží v ISR, ale step-advance je zde.
+    seq.update();
 
-    if (potsChanged) {
-        // Portamento je globalni — nastavime okamzite
+    // ── 2. Potenciometry (každých 20 ms) ──────────────────────
+    if (pots.update()) {
+        // Propaguj změny do enginu a sekvenceru
+        seq.setTempoMs(pots.tempoMs());
+        seq.useGlobalWave(true, pots.waveType());
+        seq.useGlobalAmplitude(true, pots.amplitude());
         engine.setPortamento(pots.portamento());
-
-        // Predame nove hodnoty displeje (obnovi se v display.update())
-        display.setWaveType  (pots.waveType());
-        display.setVolume    (pots.amplitude());
-        display.setPortamento(pots.portamento());
-        display.setTempoMs   (pots.tempoMs());
     }
 
-    // ── 2. Krok sekvenceru ──────────────────────────────────────
-    // Casovac se dynamicky nastavuje z pot hodnoty tempoMs.
-    // Pouzivame staticky MillisTimer — interval menime za behu
-    // pres setInterval() pokud se tempo zmenilo.
-    static MillisTimer eventTimer(250u, /*autoReset=*/false);
-    static uint8_t     step = 0;
+    // ── 3. Tlačítka (každých 50 ms = debounce interval) ───────
+    static MillisTimer btnTimer(50u, true);
+    static uint8_t     lastPlay = HIGH;
+    static uint8_t     lastStop = HIGH;
+    static uint8_t     lastPat  = HIGH;
 
-    // Synchronizace intervalu casovace s aktualni hodnotou potu
-    if (potsChanged) {
-        eventTimer.setInterval(pots.tempoMs());
-    }
-
-    if (eventTimer.expired()) {
-        eventTimer.reset();
-        step++;
-
-        if (step == 1u) {
-            // Zacatek sekvence — zapneme portamento z potu
-            engine.setPortamento(pots.portamento());
-        }
-
-        if (step >= 1u && step <= MELODY_LEN) {
-            // Zahraj notu — pouzij aktualni hodnoty potu
-            const float    freq = CHROMATIC[ MELODY[step - 1u] ] * 4.0f;  // posuneme o 2 oktavy nahoru (aby bylo slyset)
-            const uint16_t amp  = pots.amplitude();
-            const WaveType wave = pots.waveType();
-            engine.noteOn(0u, freq, amp, wave);
-        }
-
-        if (step == MELODY_LEN + 1u) {
-            // Konec sekvence — vypni hlas a portamento
-            engine.noteOff(0u);
-            engine.setPortamento(0.0f);
-        }
-
-        // ── Reset po dokonceni sekvence ──────────────────────────
-        if (step > MELODY_LEN + 2u) {
-            for (uint8_t i = 0u; i < SYNTHEX_VOICES; ++i) {
-                engine.noteOff(i);
+    if (btnTimer.expired()) {
+        if (_buttonPressed(BTN_PLAY_PAUSE, lastPlay)) {
+            if (seq.state() == SeqState::PLAYING) {
+                seq.pause();
+                Serial.println(F("PAUSED"));
+            } else {
+                seq.play();
+                Serial.println(F("PLAYING"));
             }
-            step = 0u;
+        }
+
+        if (_buttonPressed(BTN_STOP, lastStop)) {
+            seq.stop();
+            Serial.println(F("STOPPED"));
+        }
+
+        if (_buttonPressed(BTN_PATTERN, lastPat)) {
+            // Přepni na další pattern (cyklicky)
+            const uint8_t next = (seq.currentPattern() + 1u) % SEQ_PATTERNS;
+            seq.selectPattern(next);
+            Serial.print(F("PATTERN: "));
+            Serial.println(next + 1u);
         }
     }
 
-    // ── 3. Obnova displeje ──────────────────────────────────────
-    // Display::update() polluje max 1x za DISPLAY_REFRESH_MS (100 ms).
-    // Nepotrebuje zadne dalsi volani — hodnoty uz jsou nastaveny vyse.
-    display.update();
+    // ── 4. Display refresh (každých 50 ms = 20 Hz) ────────────
+    //       LCD zápis trvá ~1.5 ms — nesmí být příliš časté.
+    //       50 ms interval = plynulá animace step gridu.
+    static MillisTimer dispTimer(50u, true);
+    if (dispTimer.expired()) {
+        disp.refresh(seq, pots);
+    }
+
+    // ── 5. Debug výpis přes Serial (každou sekundu) ───────────
+    //       Odkomentuj pro ladění; produkčně zakomentuj.
+    //
+    // static MillisTimer dbgTimer(1000u, true);
+    // if (dbgTimer.expired()) {
+    //     Serial.print(F("Step:"));
+    //     Serial.print(seq.currentStep());
+    //     Serial.print(F("  BPM:"));
+    //     Serial.print(seq.bpm());
+    //     Serial.print(F("  ISR:"));
+    //     Serial.println(engine.getIsrCount());
+    // }
 }

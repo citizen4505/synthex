@@ -1,6 +1,5 @@
 /*
  * Synthex.cpp
- * Fáze 4 — Rozšíření hlasů a polyfonie
  *
  *   • SYNTHEX_VOICES = 8
  *   • Voice stealing     — při plné polyfónii se ukrade nejstarší/nejtiší hlas

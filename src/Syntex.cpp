@@ -23,7 +23,20 @@ Synthex& Synthex::getInstance() {
 
 Synthex::Synthex()
     : _isrCount(0), _lfsrState(0xACE1u),
-      _portaTimeMs(0.0f), _voiceClock(0), _nextNoteId(1) {}
+      _portaTimeMs(0.0f), _voiceClock(0), _nextNoteId(1),
+      _adsrAttackMs(5.0f), _adsrDecayMs(50.0f), _adsrReleaseMs(100.0f),
+      _adsrSustain(4095u),
+      _adsrAttackStep(0u), _adsrDecayStep(0u), _adsrReleaseStep(0u)
+{
+    // Předpočítej kroky pro výchozí parametry.
+    // ISR ještě neběží → __disable_irq není nutný.
+    constexpr float    SR   = static_cast<float>(SYNTHEX_SAMPLE_RATE);
+    constexpr uint32_t FULL = SYNTHEX_ADSR_FULL;
+
+    _adsrAttackStep  = static_cast<uint32_t>(FULL / (_adsrAttackMs  * SR / 1000.0f));
+    _adsrDecayStep   = static_cast<uint32_t>(FULL / (_adsrDecayMs   * SR / 1000.0f));
+    _adsrReleaseStep = static_cast<uint32_t>(FULL / (_adsrReleaseMs * SR / 1000.0f));
+}
 
 // ─────────────────────────────────────────────
 //  begin()
@@ -47,9 +60,9 @@ uint8_t Synthex::_findFreeVoice() {
         if (!_voices[i].active) return i;
     }
 
-    // 2. Hledej nejtiší fading-out hlas (fadeStep = 0 → úplné ticho)
-    uint8_t bestFO   = 0xFF;
-    uint8_t minFade  = 0xFF;
+    // 2a. Nejtiší fading-out hlas (fadeStep = 0 → úplné ticho)
+    uint8_t bestFO  = 0xFF;
+    uint8_t minFade = 0xFF;
     for (uint8_t i = 0; i < SYNTHEX_VOICES; ++i) {
         if (_voices[i].fadingOut && _voices[i].fadeStep < minFade) {
             minFade = _voices[i].fadeStep;
@@ -57,6 +70,19 @@ uint8_t Synthex::_findFreeVoice() {
         }
     }
     if (bestFO != 0xFF) return bestFO;
+
+    // 2b. Hlas v RELEASE fázi s nejnižším adsrAccum (nejblíže tichu)
+    //     Je to lepší volba než ukrást plně znějící hlas.
+    uint8_t  bestRel   = 0xFF;
+    uint32_t minAccum  = UINT32_MAX;
+    for (uint8_t i = 0; i < SYNTHEX_VOICES; ++i) {
+        if (_voices[i].adsrPhase == AdsrPhase::RELEASE
+            && _voices[i].adsrAccum < minAccum) {
+            minAccum = _voices[i].adsrAccum;
+            bestRel  = i;
+        }
+    }
+    if (bestRel != 0xFF) return bestRel;
 
     // 3. Ukradni nejstarší aktivní hlas (nejnižší birthTime)
     uint8_t  oldest   = 0;
@@ -131,6 +157,8 @@ void Synthex::noteOn(uint8_t idx, float freqHz,
     v.active    = true;
     v.birthTime = _voiceClock++;
     v.noteId    = 0;        // noteOnUnison ho přepíše na skupinové ID
+    v.adsrPhase = AdsrPhase::ATTACK;   // ADSR: vždy začínáme úplně od nuly
+    v.adsrAccum = 0u;
     __enable_irq();
 }
 
@@ -196,27 +224,37 @@ uint8_t Synthex::noteOnUnison(float freqHz, uint8_t unisonVoices,
 }
 
 // ─────────────────────────────────────────────
-//  noteOff — spustí fade-out jednoho hlasu
+//  noteOff — spustí ADSR Release fázi
+//
+//  Nespouštíme fadingOut přímo — to by přeskočilo ADSR Release.
+//  ADSR Release decrementuje adsrAccum → 0; teprve pak nastaví
+//  fadingOut=true a předá řízení anti-click fade-out mechanismu.
 // ─────────────────────────────────────────────
 void Synthex::noteOff(uint8_t idx) {
     if (idx >= SYNTHEX_VOICES) return;
     __disable_irq();
-    if (_voices[idx].active && !_voices[idx].fadingOut) {
-        _voices[idx].fadingOut = true;
+    Voice& v = _voices[idx];
+    if (v.active && !v.fadingOut
+        && v.adsrPhase != AdsrPhase::RELEASE
+        && v.adsrPhase != AdsrPhase::IDLE) {
+        v.adsrPhase = AdsrPhase::RELEASE;
     }
     __enable_irq();
 }
 
 // ─────────────────────────────────────────────
-//  noteOffById — spustí fade-out celé unison skupiny
+//  noteOffById — spustí ADSR Release celé unison skupiny
 // ─────────────────────────────────────────────
 void Synthex::noteOffById(uint8_t noteId) {
-    if (noteId == 0u) return;    // 0 = bez skupiny, ignoruj
+    if (noteId == 0u) return;
     __disable_irq();
     for (uint8_t i = 0; i < SYNTHEX_VOICES; ++i) {
-        if (_voices[i].active && !_voices[i].fadingOut
-            && _voices[i].noteId == noteId) {
-            _voices[i].fadingOut = true;
+        Voice& v = _voices[i];
+        if (v.active && !v.fadingOut
+            && v.noteId == noteId
+            && v.adsrPhase != AdsrPhase::RELEASE
+            && v.adsrPhase != AdsrPhase::IDLE) {
+            v.adsrPhase = AdsrPhase::RELEASE;
         }
     }
     __enable_irq();
@@ -227,6 +265,48 @@ void Synthex::noteOffById(uint8_t noteId) {
 // ─────────────────────────────────────────────
 void Synthex::setPortamento(float timeMs) {
     _portaTimeMs = (timeMs > 0.0f) ? timeMs : 0.0f;
+}
+
+// ─────────────────────────────────────────────
+//  setAdsr — nastaví ADSR parametry pro všechny hlasy
+//
+//  Přepočet Q16 kroků:
+//    step = SYNTHEX_ADSR_FULL / samples
+//         = SYNTHEX_ADSR_FULL / (timeMs * SR / 1000)
+//
+//  Krok pro decay/release je odvozený z celého rozsahu (0→FULL),
+//  takže skutečná délka decay se zkrátí úměrně hloubce poklesu,
+//  a release se zkrátí úměrně výšce sustain. Toto je standardní
+//  chování jednoduchých ADSR implementací (stejný přístup jako MCP4922).
+//
+//  Volej z hlavní smyčky, NIKDY z ISR.
+// ─────────────────────────────────────────────
+void Synthex::setAdsr(float attackMs, float decayMs,
+                      uint16_t sustainLevel, float releaseMs) {
+    _adsrAttackMs  = attackMs;
+    _adsrDecayMs   = decayMs;
+    _adsrReleaseMs = releaseMs;
+
+    constexpr float    SR   = static_cast<float>(SYNTHEX_SAMPLE_RATE);
+    constexpr uint32_t FULL = SYNTHEX_ADSR_FULL;
+
+    // Převod ms → počet vzorků; pojistka: min. 1 vzorek
+    const uint32_t atkSamp = static_cast<uint32_t>(attackMs  * SR / 1000.0f);
+    const uint32_t decSamp = static_cast<uint32_t>(decayMs   * SR / 1000.0f);
+    const uint32_t relSamp = static_cast<uint32_t>(releaseMs * SR / 1000.0f);
+
+    const uint32_t newAtkStep  = (atkSamp > 1u) ? (FULL / atkSamp) : FULL;
+    const uint32_t newDecStep  = (decSamp > 1u) ? (FULL / decSamp) : FULL;
+    const uint32_t newRelStep  = (relSamp > 1u) ? (FULL / relSamp) : FULL;
+    const uint16_t newSustain  = (sustainLevel > 4095u) ? 4095u : sustainLevel;
+
+    // Atomická aktualizace — kroky čte ISR
+    __disable_irq();
+    _adsrSustain      = newSustain;
+    _adsrAttackStep   = newAtkStep;
+    _adsrDecayStep    = newDecStep;
+    _adsrReleaseStep  = newRelStep;
+    __enable_irq();
 }
 
 // ─────────────────────────────────────────────
@@ -320,19 +400,83 @@ void Synthex::processSample() {
             if (v.fadeStep < SYNTHEX_FADE_STEPS) { ++v.fadeStep; }
         }
 
-        // ── 4. Mix ────────────────────────────────────────────
+        // ── 4. ADSR obálka ────────────────────────────────────
         //
-        // Dělení >> 15  =  4096 (amplitude škála) × 8 (SYNTHEX_FADE_STEPS)
+        // Pracujeme s Q16 akumulátorem (adsrAccum):
+        //   rozsah 0 … SYNTHEX_ADSR_FULL  (= 4095 << 16)
+        //   envLevel = adsrAccum >> 16  →  0–4095 (12-bit multiplikátor)
         //
-        // Overflow check pro 8 hlasů @ max parametrech:
-        //   |sample|   ≤ 2292  (BANDLIMITED_SAW s overshootem)
-        //   amplitude  ≤ 4095
-        //   fadeStep   ≤ 8
-        //   → produkt = 2292 × 4095 × 8 ≈ 75 M < INT32_MAX / 8 ✓
-        //   → 8 hlasů: 8 × 75 M = 600 M < INT32_MAX (2 147 M) ✓
+        // State machine:
+        //   ATTACK  : adsrAccum += attackStep  (0 → FULL)
+        //   DECAY   : adsrAccum -= decayStep   (FULL → sustainLevel << 16)
+        //   SUSTAIN : adsrAccum drží na sustainLevel << 16
+        //   RELEASE : adsrAccum -= releaseStep (sustain → 0); poté fadingOut=true
         //
-        mix += (sample * static_cast<int32_t>(v.amplitude)
-                       * static_cast<int32_t>(v.fadeStep)) >> 15;
+        // Unsigned aritmetika — hlídáme podtečení explicitní podmínkou.
+        {
+            constexpr uint32_t FULL    = SYNTHEX_ADSR_FULL;
+            const     uint32_t SUSTAIN = static_cast<uint32_t>(_adsrSustain) << 16u;
+
+            switch (v.adsrPhase) {
+
+            case AdsrPhase::ATTACK:
+                if (v.adsrAccum + _adsrAttackStep >= FULL) {
+                    v.adsrAccum = FULL;
+                    v.adsrPhase = AdsrPhase::DECAY;
+                } else {
+                    v.adsrAccum += _adsrAttackStep;
+                }
+                break;
+
+            case AdsrPhase::DECAY:
+                // Podtečení (adsrAccum < decayStep) nebo dosažení sustain úrovně
+                if (_adsrDecayStep >= v.adsrAccum
+                    || v.adsrAccum - _adsrDecayStep <= SUSTAIN) {
+                    v.adsrAccum = SUSTAIN;
+                    v.adsrPhase = AdsrPhase::SUSTAIN;
+                } else {
+                    v.adsrAccum -= _adsrDecayStep;
+                }
+                break;
+
+            case AdsrPhase::SUSTAIN:
+                // Sleduj změny sustain parametru za běhu
+                v.adsrAccum = SUSTAIN;
+                break;
+
+            case AdsrPhase::RELEASE:
+                if (_adsrReleaseStep >= v.adsrAccum) {
+                    // Release dokončen: předej řízení anti-click fade-out
+                    v.adsrAccum = 0u;
+                    v.fadingOut = true;
+                    v.adsrPhase = AdsrPhase::IDLE;
+                    // fadingOut spustí dekrementaci fadeStep v příštím cyklu;
+                    // envLevel = 0 → mix příspěvek je 0 po celou dobu fade-out
+                } else {
+                    v.adsrAccum -= _adsrReleaseStep;
+                }
+                break;
+
+            case AdsrPhase::IDLE:
+            default:
+                break;
+            }
+        }
+
+        // ── 5. Mix s ADSR obálkou ─────────────────────────────
+        //
+        // envLevel : 0–4095  (adsrAccum >> 16)
+        // effAmp   : (v.amplitude × envLevel) >> 12  →  0–4095
+        //
+        // Overflow check:
+        //   |sample|  ≤ 2292, effAmp ≤ 4094, fadeStep ≤ 8
+        //   produkt   ≤ 2292 × 4094 × 8 ≈ 75 M < INT32_MAX/8 ✓   (stejné jako dřív)
+        //   8 hlasů: 8 × 75 M = 600 M < INT32_MAX (2 147 M) ✓
+        //
+        const uint16_t envLevel = static_cast<uint16_t>(v.adsrAccum >> 16u);
+        const int32_t  effAmp   = (static_cast<int32_t>(v.amplitude)
+                                 * static_cast<int32_t>(envLevel)) >> 12;
+        mix += (sample * effAmp * static_cast<int32_t>(v.fadeStep)) >> 15;
     }
 
     // DC offset pro DAC (0–4095); clamp pro případ saturace mixu

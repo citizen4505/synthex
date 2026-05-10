@@ -24,6 +24,21 @@
 // Maximální počet hlasů v jednom unison shluku
 #define SYNTHEX_MAX_UNISON      4u
 
+// ADSR akumulátor — Q16 fixed-point; 4095 << 16 = plná amplituda
+// Rozsah: 0 (ticho) … SYNTHEX_ADSR_FULL (maximum)
+#define SYNTHEX_ADSR_FULL       (4095u << 16u)   // = 268 369 920
+
+// ─────────────────────────────────────────────
+//  Fáze ADSR obálky
+// ─────────────────────────────────────────────
+enum class AdsrPhase : uint8_t {
+    IDLE    = 0,   // hlas neaktivní (před noteOn nebo po Release)
+    ATTACK  = 1,   // náběh: adsrAccum  0 → FULL
+    DECAY   = 2,   // pokles: adsrAccum FULL → sustainLevel << 16
+    SUSTAIN = 3,   // drží: adsrAccum = sustainLevel << 16 (do noteOff)
+    RELEASE = 4    // doznění: adsrAccum → 0; poté spustí anti-click fade-out
+};
+
 // ─────────────────────────────────────────────
 //  Jeden hlas syntezátoru
 // ─────────────────────────────────────────────
@@ -52,6 +67,13 @@ struct Voice {
     volatile uint16_t amplitude;        // 0–4095 (12-bit škála)
     WaveType          waveType;
 
+    // ── ADSR obálka ───────────────────────────
+    // adsrPhase : aktuální fáze ATTACK / DECAY / SUSTAIN / RELEASE / IDLE
+    // adsrAccum : Q16 akumulátor, 0 = ticho, SYNTHEX_ADSR_FULL = plná amplituda
+    //             envLevel = adsrAccum >> 16  →  0–4095  (12-bitový multiplikátor)
+    volatile AdsrPhase adsrPhase;
+    volatile uint32_t  adsrAccum;
+
     // ── Voice stealing & unison ───────────────
     // birthTime : logický čítač; nižší = starší = prioritní pro krádež
     // noteId    : 0 = samostatný hlas, >0 = patří do unison skupiny
@@ -64,6 +86,7 @@ struct Voice {
           phaseAccum(0), phaseIncrement(0),
           targetIncrement(0), portaStep(0),
           amplitude(SYNTHEX_DAC_MID), waveType(WaveType::SINE),
+          adsrPhase(AdsrPhase::IDLE), adsrAccum(0u),
           birthTime(0), noteId(0) {}
 };
 
@@ -121,6 +144,27 @@ public:
     void  setPortamento(float timeMs);
     float getPortamento() const { return _portaTimeMs; }
 
+    // ─────────────────────────────────────────────────────────────────
+    //  ADSR obálka — globální parametry pro všechny hlasy
+    //
+    //  attackMs  : náběh 0 → plná amplituda [ms]  (0 = okamžitý)
+    //  decayMs   : pokles plná → sustain level [ms]
+    //  sustain   : úroveň držení [0–4095]; 4095 = žádný pokles
+    //  releaseMs : doznění sustain → 0 [ms]
+    //
+    //  Kroky jsou přepočítány ihned; lze volat za běhu.
+    //  Výchozí hodnoty: A=5ms, D=50ms, S=4095, R=100ms
+    // ─────────────────────────────────────────────────────────────────
+    void setAdsr(float    attackMs,
+                 float    decayMs,
+                 uint16_t sustainLevel,
+                 float    releaseMs);
+
+    float    getAdsrAttack()  const { return _adsrAttackMs; }
+    float    getAdsrDecay()   const { return _adsrDecayMs; }
+    uint16_t getAdsrSustain() const { return _adsrSustain; }
+    float    getAdsrRelease() const { return _adsrReleaseMs; }
+
     // ── ISR ──────────────────────────────────
     void processSample();   // volá výhradně TC3_Handler
 
@@ -147,6 +191,20 @@ private:
     float    _portaTimeMs;      // globální čas portamenta [ms]
     uint32_t _voiceClock;       // monotónní čítač; přičítá se při každém noteOn
     uint8_t  _nextNoteId;       // rotuje 1–255; 0 je rezervováno jako "bez skupiny"
+
+    // ── ADSR parametry ────────────────────────
+    // Časy (float) — pouze pro get, přepočet probíhá v setAdsr()
+    float    _adsrAttackMs;
+    float    _adsrDecayMs;
+    float    _adsrReleaseMs;
+
+    // Kroky (volatile — čte je ISR processSample)
+    // Q16 přírůstek/úbytek adsrAccum za jeden vzorek:
+    //   SYNTHEX_ADSR_FULL / (timeMs * SYNTHEX_SAMPLE_RATE / 1000)
+    volatile uint16_t _adsrSustain;      // sustain level 0–4095
+    volatile uint32_t _adsrAttackStep;
+    volatile uint32_t _adsrDecayStep;
+    volatile uint32_t _adsrReleaseStep;
 };
 
 #ifdef __cplusplus

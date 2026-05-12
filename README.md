@@ -1,7 +1,27 @@
 # Synthex
 
+```
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║   ░░░  S Y N T H E X  ░░░   Wavetable Synthesizer                   ║
+║                                                                      ║
+║   Arduino Due · SAM3X8E · 84 MHz ARM Cortex-M3                      ║
+║   8 polyphonic voices · 44 100 Hz · 32-step sequencer               ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+![Arduino Due](https://img.shields.io/badge/Arduino-Due-00979D?style=flat-square&logo=arduino&logoColor=white)
+![MCU](https://img.shields.io/badge/MCU-SAM3X8E_84_MHz-0091BD?style=flat-square)
+![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus&logoColor=white)
+![PlatformIO](https://img.shields.io/badge/build-PlatformIO-F5822A?style=flat-square&logo=platformio&logoColor=white)
+![Sample Rate](https://img.shields.io/badge/sample_rate-44_100_Hz-7B2D8B?style=flat-square)
+![Voices](https://img.shields.io/badge/voices-8×_polyphonic-7B2D8B?style=flat-square)
+![Sequencer](https://img.shields.io/badge/sequencer-32_steps_×_4_patterns-7B2D8B?style=flat-square)
+![DAC](https://img.shields.io/badge/DAC-12_bit_·_DAC1_(PA3)-7B2D8B?style=flat-square)
+
 Vícehlasý wavetable syntezátor pro **Arduino Due** (SAM3X8E, 84 MHz ARM Cortex-M3).
-Zvuk je generován přímým čtením z Flash paměti bez kopírování do RAM, s výstupem přes 12-bit DAC na pinu  **DAC1 (PA3)** .
+Zvuk je generován přímým čtením z Flash paměti bez kopírování do RAM, s výstupem přes 12-bit DAC na pinu **DAC1 (PA3)**.
 
 Projekt zahrnuje kompletní systém: syntetizátor, step sekvencer, displej LCD 1602 a řízení přes potenciometry.
 
@@ -9,26 +29,26 @@ Projekt zahrnuje kompletní systém: syntetizátor, step sekvencer, displej LCD 
 
 ## Obsah
 
-* [Přehled architektury](#p%C5%99ehled-architektury)
-* [Hardware](#hardware)
-* [Parametry enginu](#parametry-enginu)
-* [Wavetables](#wavetables)
-* [Fázový akumulátor](#f%C3%A1zov%C3%BD-akumul%C3%A1tor)
-* [Portamento](#portamento)
-* [Voice stealing](#voice-stealing)
-* [Sekvencer](#sekvencer)
-* [Potenciometry (Pots)](#potenciometry-pots)
-* [Displej (Display)](#displej-display)
-* [Hudební stupnice (Scales)](#hudebn%C3%AD-stupnice-scales)
-* [Struktura projektu](#struktura-projektu)
-* [API reference](#api-reference)
-* [Rychlý start](#rychl%C3%BD-start)
-* [Diagnostika](#diagnostika)
-* [Známé chování a limity](#zn%C3%A1m%C3%A9-chov%C3%A1n%C3%AD-a-limity)
+* [🏗 Přehled architektury](#přehled-architektury)
+* [🔩 Hardware](#hardware)
+* [⚙️ Parametry enginu](#parametry-enginu)
+* [🌊 Wavetables](#wavetables)
+* [📡 Fázový akumulátor](#fázový-akumulátor)
+* [🎚️ Portamento](#portamento)
+* [🔀 Voice stealing](#voice-stealing)
+* [🎵 Sekvencer](#sekvencer)
+* [🎛️ Potenciometry (Pots)](#potenciometry-pots)
+* [📟 Displej (Display)](#displej-display)
+* [🎼 Hudební stupnice (Scales)](#hudební-stupnice-scales)
+* [📁 Struktura projektu](#struktura-projektu)
+* [📘 API reference](#api-reference)
+* [🚀 Rychlý start](#rychlý-start)
+* [🔬 Diagnostika](#diagnostika)
+* [⚠️ Známé chování a limity](#známé-chování-a-limity)
 
 ---
 
-## Přehled architektury
+## 🏗 Přehled architektury
 
 ### Tok řízení
 
@@ -113,28 +133,29 @@ V každém přerušení se spočítá jeden vzorek za každý aktivní hlas, vý
 
 ---
 
-## Hardware
+## 🔩 Hardware
 
 ### Arduino Due — pinout
 
 | Komponenta              | Pin           | Poznámka                              |
 | ----------------------- | ------------- | -------------------------------------- |
-| DAC výstup             | `DAC1`(PA3) | audio výstup, 12-bit                  |
-| Potenciometr VOLUME     | `A0`        | 10 kΩ lin., napájení 3,3 V          |
-| Potenciometr PORTAMENTO | `A1`        |                                        |
-| Potenciometr WAVETYPE   | `A2`        |                                        |
-| Potenciometr TEMPO      | `A3`        |                                        |
-| LCD RS                  | `8`         | HD44780, 4-bitový mód                |
-| LCD EN                  | `9`         |                                        |
-| LCD D4                  | `4`         |                                        |
-| LCD D5                  | `5`         |                                        |
-| LCD D6                  | `6`         |                                        |
-| LCD D7                  | `7`         | (pin 13 = LED → záměrně vynechán) |
-| Tlačítko PLAY/PAUSE   | `10`        | INPUT_PULLUP, stisk = LOW              |
-| Tlačítko STOP         | `11`        |                                        |
-| Tlačítko PATTERN+     | `12`        |                                        |
+| DAC výstup             | `DAC1` (PA3) | audio výstup, 12-bit                  |
+| Potenciometr VOLUME     | `A0`          | 10 kΩ lin., napájení 3,3 V          |
+| Potenciometr PORTAMENTO | `A1`          |                                        |
+| Potenciometr WAVETYPE   | `A2`          |                                        |
+| Potenciometr TEMPO      | `A3`          |                                        |
+| LCD RS                  | `8`           | HD44780, 4-bitový mód                |
+| LCD EN                  | `9`           |                                        |
+| LCD D4                  | `4`           |                                        |
+| LCD D5                  | `5`           |                                        |
+| LCD D6                  | `6`           |                                        |
+| LCD D7                  | `7`           | (pin 13 = LED → záměrně vynechán) |
+| Tlačítko PLAY/PAUSE   | `10`          | INPUT_PULLUP, stisk = LOW              |
+| Tlačítko STOP         | `11`          |                                        |
+| Tlačítko PATTERN+     | `12`          |                                        |
 
-> **⚠ Arduino Due:** logická úroveň 3,3 V. Potenciometry a LCD připojuj výhradně na 3,3 V — ADC není 5 V tolerantní.
+> [!WARNING]
+> **Arduino Due:** logická úroveň 3,3 V. Potenciometry a LCD připojuj výhradně na 3,3 V — ADC není 5 V tolerantní.
 
 ### Parametry procesoru
 
@@ -151,7 +172,7 @@ V každém přerušení se spočítá jeden vzorek za každý aktivní hlas, vý
 
 ---
 
-## Parametry enginu
+## ⚙️ Parametry enginu
 
 Definovány v `Synthex.h`:
 
@@ -169,7 +190,7 @@ Definovány v `Synthex.h`:
 
 ---
 
-## Wavetables
+## 🌊 Wavetables
 
 Tabulky jsou generovány skriptem `generate_wavetables.py` a uloženy v `wavetables.h` jako `const int16_t[]` — ve **Flash paměti** (`.rodata`). Za běhu se nekopírují do RAM.
 
@@ -178,27 +199,30 @@ Tabulky jsou generovány skriptem `generate_wavetables.py` a uloženy v `wavetab
 #define SYNTHEX_WAVETABLE_COUNT  6u
 ```
 
-| Index | `WaveType`        | Popis                             | Min    | Max   |
+| Index | `WaveType`          | Popis                             | Min    | Max   |
 | ----- | ------------------- | --------------------------------- | ------ | ----- |
-| 0     | `SINE`            | Sinus                             | −2047 | +2047 |
-| 1     | `SAW`             | Pilový průběh                  | −2047 | +2045 |
-| 2     | `SQUARE`          | ⚠ Viz poznámka níže           | −2047 | +2047 |
-| 3     | `TRIANGLE`        | Trojúhelník                     | −2047 | +2047 |
-| 4     | `BANDLIMITED_SAW` | Pilový průběh bez aliasingu    | −2292 | +2292 |
-| 5     | `SAMPLE`          | Uživatelský vzorek (WAV import) | −2048 | +2047 |
+| 0     | `SINE`              | Sinus                             | −2047 | +2047 |
+| 1     | `SAW`               | Pilový průběh                  | −2047 | +2045 |
+| 2     | `SQUARE`            | ⚠ Viz poznámka níže           | −2047 | +2047 |
+| 3     | `TRIANGLE`          | Trojúhelník                     | −2047 | +2047 |
+| 4     | `BANDLIMITED_SAW`   | Pilový průběh bez aliasingu    | −2292 | +2292 |
+| 5     | `SAMPLE`            | Uživatelský vzorek (WAV import) | −2048 | +2047 |
 
 Každá tabulka: **2048 vzorků × 2 B = 4 096 B**
 Celkem: **6 × 4 096 B = 24 576 B = 24 KB Flash**
 
-> **⚠ `WaveType::SQUARE`** — navzdory názvu engine pro tento typ místo čtení z tabulky generuje  **bílý šum pomocí 32-bitového Galoisova LFSR** . Tabulka `SYNTHEX_TABLE_SQUARE` se za běhu nepoužívá. Pokud potřebuješ skutečný obdélník, přidej nový `WaveType` a uprav `processSample()`.
+> [!WARNING]
+> **`WaveType::SQUARE`** — navzdory názvu engine pro tento typ místo čtení z tabulky generuje **bílý šum pomocí 32-bitového Galoisova LFSR**. Tabulka `SYNTHEX_TABLE_SQUARE` se za běhu nepoužívá. Pokud potřebuješ skutečný obdélník, přidej nový `WaveType` a uprav `processSample()`.
 
-> **⚠ `BANDLIMITED_SAW`** — peak ±2292 překračuje 12-bit rozsah. Po vynásobení amplitudou může dojít k ořezu. Při použití doporučujeme snížit `amplitude`.
+> [!WARNING]
+> **`BANDLIMITED_SAW`** — peak ±2292 překračuje 12-bit rozsah. Po vynásobení amplitudou může dojít k ořezu. Při použití doporučujeme snížit `amplitude`.
 
-> **⚠ Komentář v `wavetables.h`** — hlavičkový komentář souboru uvádí "5 tabulek", ale `SYNTHEX_WAVETABLE_COUNT = 6` a `WaveType::COUNT = 6`. Komentář je zastaralý — přidání `SAMPLE` tabulky ho neaktualizovalo.
+> [!NOTE]
+> **Komentář v `wavetables.h`** — hlavičkový komentář souboru uvádí "5 tabulek", ale `SYNTHEX_WAVETABLE_COUNT = 6` a `WaveType::COUNT = 6`. Komentář je zastaralý — přidání `SAMPLE` tabulky ho neaktualizovalo.
 
 ---
 
-## Fázový akumulátor
+## 📡 Fázový akumulátor
 
 Syntéza tónu funguje na principu **Direct Digital Synthesis (DDS)** s lineární interpolací:
 
@@ -226,7 +250,7 @@ uint32_t inc = (uint32_t)(freqHz * k);
 
 ---
 
-## Portamento
+## 🎚️ Portamento
 
 Globální lineární glide — platí pro všechny hlasy. Při `noteOn()` na **aktivní, nefadující** hlas engine plynule posunuje `phaseIncrement` místo skoku.
 
@@ -249,7 +273,7 @@ Záporný `portaStep` se přičítá přes unsigned wrap (two's complement): `ph
 
 ---
 
-## Voice stealing
+## 🔀 Voice stealing
 
 Při plné polyfónii (8 hlasů) funkce `_findFreeVoice()` vybere hlas podle strategie:
 
@@ -266,9 +290,9 @@ flowchart TD
 
 ---
 
-## Sekvencer
+## 🎵 Sekvencer
 
-16-krokový step sekvencer (`Sequencer.h / Sequencer.cpp`) s podporou 4 patternů.
+32-krokový step sekvencer (`Sequencer.h / Sequencer.cpp`) s podporou 4 patternů.
 
 ### Časování kroků
 
@@ -284,19 +308,19 @@ Tok jednoho kroku:
 
 ### Hlas sekvenceru
 
-Sekvencer pevně používá hlas  **`SEQ_VOICE = 0`** . Hlasy 1–7 jsou volné pro manuální API (`noteOnAuto`, `noteOnUnison`).
+Sekvencer pevně používá hlas **`SEQ_VOICE = 0`**. Hlasy 1–7 jsou volné pro manuální API (`noteOnAuto`, `noteOnUnison`).
 
 ### BPM konvence
 
 Každý krok = 1/16 noty v 4/4 taktu. BPM = 15 000 / tempoMs.
 
 | `tempoMs` | BPM |
-| ----------- | --- |
-| 80 ms       | 187 |
-| 125 ms      | 120 |
-| 187 ms      | 80  |
-| 250 ms      | 60  |
-| 500 ms      | 30  |
+| --------- | --- |
+| 80 ms     | 187 |
+| 125 ms    | 120 |
+| 187 ms    | 80  |
+| 250 ms    | 60  |
+| 500 ms    | 30  |
 
 ### Gate
 
@@ -308,14 +332,14 @@ gateMs = tempoMs × gatePercent / 100   (min. 10 ms)
 
 ### Demo patterny (`loadDemoPatterns()`)
 
-Voláno automaticky z `begin()`.
+Voláno automaticky z `begin()`. Každý pattern má **32 kroků** rozdělených do dvou 16-krokových frází.
 
-| Pattern | Kořen | Stupnice           | Charakter                 |
-| ------- | ------ | ------------------ | ------------------------- |
-| 0       | A3     | Pentatonická moll | Blues/funk groove         |
-| 1       | D4     | Dórská           | Jazzový vzestup + sestup |
-| 2       | C4     | Bluesová          | Synkopy + blue note F#4   |
-| 3       | —     | Prázdný          | Pro live editaci          |
+| Pattern | Kořen | Stupnice           | Fráze 1 (kroky 0–15)        | Fráze 2 (kroky 16–31)    |
+| ------- | ------ | ------------------ | ---------------------------- | -------------------------- |
+| 0       | A3     | Pentatonická moll | Blues/funk groove            | Variace s výšším A4        |
+| 1       | D4     | Dórská           | Vzestup + sestup D4–D5      | Rozšíření do vyšší oktávy |
+| 2       | C4     | Bluesová          | Synkopy + blue note F#4     | Turnaround (C4–Bb4–C4)    |
+| 3       | —     | Prázdný          | Pro live editaci (inactive) | Pro live editaci (inactive) |
 
 ### Globální přepisy (ovládané z Pots)
 
@@ -327,7 +351,7 @@ seq.setTempoMs(125u);                     // 120 BPM
 
 ---
 
-## Potenciometry (Pots)
+## 🎛️ Potenciometry (Pots)
 
 Čtyři 10 kΩ lineární potenciometry na analogových vstupech Due (3,3 V). Čtení pomocí 12-bit ADC s EMA filtrací a deadzónou.
 
@@ -354,18 +378,21 @@ ADC se čte každých **20 ms** (z `loop()`). `analogRead()` na Due trvá ~40 µ
 
 ---
 
-## Displej (Display)
+## 📟 Displej (Display)
 
 HD44780 LCD 1602 (16×2 znaků) v 4-bitovém módu. Ovládáno přes `LiquidCrystal` (Arduino core, bez externích závislostí).
 
 ### Rozložení obrazovky
 
 ```
-Řádek 0 — STEP GRID (1 znak / krok):
+Řádek 0 — STEP GRID (1 znak / krok, okno 16 ze 32):
   col: 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
        █  _  █  █  ▣  .  _  █  █  .  .  █  _  █  █  .
                     ^
                     aktuální krok = CGRAM rámeček
+
+  Kroky  0–15 → zobrazí se první polovina patternu
+  Kroky 16–31 → zobrazí se druhá polovina patternu
 
 Řádek 1 — INFO:  ">120 A#3 BSAW P2"
   [st][BPM]_[NOTE]_[WAVE]_P[pat]
@@ -373,13 +400,13 @@ HD44780 LCD 1602 (16×2 znaků) v 4-bitovém módu. Ovládáno přes `LiquidCrys
 
 ### Klíč symbolů (CGRAM)
 
-| Slot        | Symbol                    | Použití                              |
+| Slot        | Symbol                    | Použití                                |
 | ----------- | ------------------------- | -------------------------------------- |
-| 0           | `▣`rámeček s tečkou | aktuální krok + nota (gate zapnutý) |
-| 1           | `□`prázdný rámeček | aktuální krok + pauza / neaktivní   |
-| 2           | `█`plný blok          | krok s notou                           |
-| 3           | `_`spodní čára       | krok s pauzou (rest)                   |
-| ASCII `.` | tečka                    | neaktivní krok                        |
+| 0           | `▣` rámeček s tečkou   | aktuální krok + nota (gate zapnutý)  |
+| 1           | `□` prázdný rámeček   | aktuální krok + pauza / neaktivní    |
+| 2           | `█` plný blok           | krok s notou                           |
+| 3           | `_` spodní čára        | krok s pauzou (rest)                   |
+| ASCII `.`   | tečka                     | neaktivní krok                        |
 
 ### Info řádek — formát
 
@@ -395,11 +422,11 @@ HD44780 LCD 1602 (16×2 znaků) v 4-bitovém módu. Ovládáno přes `LiquidCrys
 
 ### Timing
 
-`refresh()` trvá ~1,5 ms (oba řádky, 32 znaků). Voláno každých **50 ms** (20 Hz). `lcd.clear()` se v `refresh()` **nikdy** nepoužívá — přepisujeme každý znak na místě.
+`refresh()` trvá ~1,5 ms (oba řádky, 32 znaků). Voláno každých **50 ms** (20 Hz). `lcd.clear()` se v `refresh()` **nikdy** nepoužívá — přepisujeme každý znak na místě. Okno krokového gridu se přepíná automaticky na základě `currentStep` (kroky 0–15 → první polovina, 16–31 → druhá polovina).
 
 ---
 
-## Hudební stupnice (Scales)
+## 🎼 Hudební stupnice (Scales)
 
 `Scales.h` — konstanty, funkce a předdefinované tabulky pro práci s hudebními stupnicemi.
 
@@ -428,21 +455,21 @@ C=0  Cs=1  D=2  Ds=3  E=4  F=5  Fs=6  G=7  Gs=8  A=9  As=10  B=11
 
 | Konstanta                  | Délka | Charakter                            |
 | -------------------------- | ------ | ------------------------------------ |
-| `SCALE_CHROMATIC`        | 12     | Všech 12 půltónů                 |
-| `SCALE_MAJOR`            | 7      | Dur (ionická)                       |
-| `SCALE_NATURAL_MINOR`    | 7      | Přirozená moll (aiolská)          |
-| `SCALE_HARMONIC_MINOR`   | 7      | Harmonická moll                     |
-| `SCALE_PENTATONIC_MAJOR` | 5      | Pentatonická dur                    |
-| `SCALE_PENTATONIC_MINOR` | 5      | Pentatonická moll                   |
-| `SCALE_BLUES`            | 6      | Bluesová (pentat. moll + blue note) |
-| `SCALE_DORIAN`           | 7      | Dórská (jazz/funk)                 |
-| `SCALE_PHRYGIAN`         | 7      | Frygická (flamenco)                 |
-| `SCALE_LYDIAN`           | 7      | Lydická                             |
-| `SCALE_MIXOLYDIAN`       | 7      | Mixolydická (rock/folk)             |
-| `SCALE_WHOLE_TONE`       | 6      | Celotónová (Debussy)               |
-| `SCALE_DIMINISHED`       | 8      | Zmenšená (jazz)                    |
-| `SCALE_INSEN`            | 5      | Japonská insen                      |
-| `SCALE_DOUBLE_HARMONIC`  | 7      | Arabská / double harmonická        |
+| `SCALE_CHROMATIC`          | 12     | Všech 12 půltónů                 |
+| `SCALE_MAJOR`              | 7      | Dur (ionická)                       |
+| `SCALE_NATURAL_MINOR`      | 7      | Přirozená moll (aiolská)          |
+| `SCALE_HARMONIC_MINOR`     | 7      | Harmonická moll                     |
+| `SCALE_PENTATONIC_MAJOR`   | 5      | Pentatonická dur                    |
+| `SCALE_PENTATONIC_MINOR`   | 5      | Pentatonická moll                   |
+| `SCALE_BLUES`              | 6      | Bluesová (pentat. moll + blue note) |
+| `SCALE_DORIAN`             | 7      | Dórská (jazz/funk)                 |
+| `SCALE_PHRYGIAN`           | 7      | Frygická (flamenco)                 |
+| `SCALE_LYDIAN`             | 7      | Lydická                             |
+| `SCALE_MIXOLYDIAN`         | 7      | Mixolydická (rock/folk)             |
+| `SCALE_WHOLE_TONE`         | 6      | Celotónová (Debussy)               |
+| `SCALE_DIMINISHED`         | 8      | Zmenšená (jazz)                    |
+| `SCALE_INSEN`              | 5      | Japonská insen                      |
+| `SCALE_DOUBLE_HARMONIC`    | 7      | Arabská / double harmonická        |
 
 ### Předdefinované frekvenční tabulky (Flash)
 
@@ -467,14 +494,14 @@ uint8_t ch2[4]   = CHORD_DOM7_MIDI(NOTE(C, 4));   // C7: C4, E4, G4, Bb4
 
 ---
 
-## Struktura projektu
+## 📁 Struktura projektu
 
 ```
 .
 ├── Synthex.h              # Třída Synthex, struct Voice, WaveType, konfigurace
 ├── Syntex.cpp             # Implementace: DAC, Timer, ISR, mix, portamento, unison
 ├── wavetables.h           # Předgenerované tabulky (Flash), SYNTHEX_TABLES[6][2048]
-├── Sequencer.h            # 16-krokový step sekvencer, SeqStep, SeqState
+├── Sequencer.h            # 32-krokový step sekvencer, SeqStep, SeqState
 ├── Sequencer.cpp          # Implementace: step/gate timer, demo patterny, transport
 ├── Scales.h               # MIDI → Hz, stupnice, akordy, frekvenční tabulky (Flash)
 ├── Display.h              # HD44780 LCD 1602 driver, CGRAM symboly
@@ -486,11 +513,12 @@ uint8_t ch2[4]   = CHORD_DOM7_MIDI(NOTE(C, 4));   // C7: C4, E4, G4, Bb4
 └── generate_wavetables.py # Generátor wavetable tabulek (není součástí buildu)
 ```
 
-> **Poznámka:** Soubor implementace enginu se jmenuje `Syntex.cpp` (chybí `h`) — jde o překlep v názvu souboru; třída i hlavičkový soubor se správně jmenují `Synthex`.
+> [!NOTE]
+> Soubor implementace enginu se jmenuje `Syntex.cpp` (chybí `h`) — jde o překlep v názvu souboru; třída i hlavičkový soubor se správně jmenují `Synthex`.
 
 ---
 
-## API reference
+## 📘 API reference
 
 ### `Synthex` (singleton)
 
@@ -524,7 +552,7 @@ uint8_t id = engine.noteOnUnison(440.0f, 3, 20.0f, 220, WaveType::BANDLIMITED_SA
 // 3 hlasy: -10 ct, 0, +10 ct
 ```
 
-| Počet hlasů | Rozmístění centů         |
+| Počet hlasů | Rozmístění centů          |
 | ------------- | ---------------------------- |
 | 1             | `[0]`                      |
 | 2             | `[-d/2, +d/2]`             |
@@ -670,16 +698,16 @@ MillisTimer oneShot(2000);       // manuální reset
 if (oneShot.expired()) { doThing(); oneShot.reset(); }
 ```
 
-| Metoda              | Popis                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------- |
-| `expired()`       | `true`po uplynutí intervalu; v autoReset posune referenci přesně o `_interval` |
-| `reset()`         | Manuální reset na aktuální čas                                                   |
-| `remaining()`     | Zbývající ms do příštího vypršení                                            |
-| `setInterval(ms)` | Dynamická změna intervalu                                                           |
+| Metoda              | Popis                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `expired()`         | `true` po uplynutí intervalu; v autoReset posune referenci přesně o `_interval` |
+| `reset()`           | Manuální reset na aktuální čas                                                   |
+| `remaining()`       | Zbývající ms do příštího vypršení                                              |
+| `setInterval(ms)`   | Dynamická změna intervalu                                                         |
 
 ---
 
-## Rychlý start
+## 🚀 Rychlý start
 
 ```cpp
 #include "Synthex.h"
@@ -723,7 +751,7 @@ void loop() {
 
 ---
 
-## Diagnostika
+## 🔬 Diagnostika
 
 Výpočet RC pro timer (pro případ změny `SYNTHEX_SAMPLE_RATE`):
 
@@ -745,31 +773,31 @@ Ověření frekvence ISR ze sériové linky (odkomentovat v `main.cpp`):
 
 ### Přibližná využití paměti (Arduino Due)
 
-| Oblast                 | Obsah                                               | Velikost |
-| ---------------------- | --------------------------------------------------- | -------- |
-| Flash (.rodata)        | 6 wavetables                                        | 24 KB    |
-| Flash (.rodata)        | Předdefinované stupnicové tabulky (`Scales.h`) | ~0,5 KB  |
-| RAM (.bss)             | `_patterns[4][16]`(SeqStep)                       | ~768 B   |
-| RAM (.bss)             | `_voices[8]`(Voice)                               | ~200 B   |
-| RAM (stack + ostatní) |                                                     | ~4 KB    |
+| Oblast                  | Obsah                                            | Velikost |
+| ----------------------- | ------------------------------------------------ | -------- |
+| Flash (.rodata)         | 6 wavetables                                     | 24 KB    |
+| Flash (.rodata)         | Předdefinované stupnicové tabulky (`Scales.h`)  | ~0,5 KB  |
+| RAM (.bss)              | `_patterns[4][32]` (SeqStep)                    | ~1,5 KB  |
+| RAM (.bss)              | `_voices[8]` (Voice)                            | ~200 B   |
+| RAM (stack + ostatní)  |                                                  | ~4 KB    |
 
-Celkem RAM ≈ **~5 KB** z 96 KB (< 6 %).
+Celkem RAM ≈ **~6 KB** z 96 KB (< 7 %).
 
 ---
 
-## Známé chování a limity
+## ⚠️ Známé chování a limity
 
-| Téma                           | Popis                                                                                                                                                                   |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WaveType::SQUARE`            | Generuje bílý šum (32-bit Galoisův LFSR), ne obdélník. Tabulka se za běhu nepoužívá.                                                                          |
-| `BANDLIMITED_SAW`             | Peak ±2292 překračuje 12-bit rozsah. Při plné amplitudě dochází k ořezu DAC.                                                                                   |
-| Mix clipping                    | Součet hlasů není normalizován automaticky. Bezpečná amplituda:`4095 / N`. Overflow check: 8 × 2292 × 4095 × 8 ≈ 600 M < INT32_MAX ✓                       |
-| `Syntex.cpp`                  | Překlep v názvu souboru (chybí `h`). Třída a header soubor se správně jmenují `Synthex`.                                                                    |
-| Komentář v `wavetables.h`   | Hlavičkový komentář říká "5 tabulek", ale kód definuje `SYNTHEX_WAVETABLE_COUNT = 6`.                                                                         |
-| Komentář v `main.cpp`       | Komentář uvádí LCD D4=10, D5=11, D6=12 a tlačítka na pinech 2,3,4. Skutečné `#define`hodnoty jsou jiné (LCD D4=4..6, tlačítka 10..12). Kód má přednost. |
-| Portamento                      | Platí globálně pro všechny hlasy.`portaStep`je integer — při velmi malém frekvenčním skoku zaokrouhlení na ±1.                                             |
-| Voice stealing                  | `_findFreeVoice()`čte `volatile`data mimo ISR → krátký window neurčitosti je akceptovatelný.                                                                  |
-| Thread safety                   | `noteOn`/`noteOff`/`noteOffById`chrání kritické sekce pomocí `__disable_irq()`/`__enable_irq()`.                                                          |
-| `_nextNoteId`                 | Rotuje 1–255. Po 255 noteOnUnison voláních může dojít ke kolizi ID (v praxi zanedbatelné).                                                                       |
-| `noteFreq()`/`buildScale()` | Volají `powf()`— ~1 µs na Due. Nevolat z ISR ani z těsné smyčky bez ochrany.                                                                                    |
-| Flash vs RAM                    | Wavetables a stupnicové tabulky jsou v `.rodata`(Flash). Na AVR by bylo nutné `PROGMEM`+`pgm_read_word()`.                                                      |
+| Téma                           | Popis                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WaveType::SQUARE`             | Generuje bílý šum (32-bit Galoisův LFSR), ne obdélník. Tabulka se za běhu nepoužívá.                                                                            |
+| `BANDLIMITED_SAW`              | Peak ±2292 překračuje 12-bit rozsah. Při plné amplitudě dochází k ořezu DAC.                                                                                     |
+| Mix clipping                   | Součet hlasů není normalizován automaticky. Bezpečná amplituda: `4095 / N`. Overflow check: 8 × 2292 × 4095 × 8 ≈ 600 M < INT32_MAX ✓                          |
+| `Syntex.cpp`                   | Překlep v názvu souboru (chybí `h`). Třída a header soubor se správně jmenují `Synthex`.                                                                      |
+| Komentář v `wavetables.h`      | Hlavičkový komentář říká "5 tabulek", ale kód definuje `SYNTHEX_WAVETABLE_COUNT = 6`.                                                                           |
+| Komentář v `main.cpp`          | Komentář uvádí LCD D4=10, D5=11, D6=12 a tlačítka na pinech 2,3,4. Skutečné `#define` hodnoty jsou jiné (LCD D4=4..6, tlačítka 10..12). Kód má přednost.     |
+| Portamento                     | Platí globálně pro všechny hlasy. `portaStep` je integer — při velmi malém frekvenčním skoku zaokrouhlení na ±1.                                               |
+| Voice stealing                 | `_findFreeVoice()` čte `volatile` data mimo ISR → krátký window neurčitosti je akceptovatelný.                                                                    |
+| Thread safety                  | `noteOn`/`noteOff`/`noteOffById` chrání kritické sekce pomocí `__disable_irq()`/`__enable_irq()`.                                                              |
+| `_nextNoteId`                  | Rotuje 1–255. Po 255 noteOnUnison voláních může dojít ke kolizi ID (v praxi zanedbatelné).                                                                         |
+| `noteFreq()`/`buildScale()`    | Volají `powf()` — ~1 µs na Due. Nevolat z ISR ani z těsné smyčky bez ochrany.                                                                                      |
+| Flash vs RAM                   | Wavetables a stupnicové tabulky jsou v `.rodata` (Flash). Na AVR by bylo nutné `PROGMEM` + `pgm_read_word()`.                                                       |

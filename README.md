@@ -1,14 +1,15 @@
 # Synthex
 
 ```
-╔══════════════════════════════════════════════════════════════════════╗
-║                                                                      ║
-║   ░░░  S Y N T H E X  ░░░   Wavetable Synthesizer                   ║
-║                                                                      ║
-║   Arduino Due · SAM3X8E · 84 MHz ARM Cortex-M3                      ║
-║   8 polyphonic voices · 44 100 Hz · 32-step sequencer               ║
-║                                                                      ║
-╚══════════════════════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════════════╗
+║                                                         ║
+║                ░░░  S Y N T H E X  ░░░                  ║
+║                 Wavetable Synthesizer                   ║
+║                                                         ║
+║      Arduino Due · SAM3X8E · 84 MHz ARM Cortex-M3       ║
+║   8 polyphonic voices · 44 100 Hz · 32-step sequencer   ║
+║                                                         ║
+╚═════════════════════════════════════════════════════════╝
 ```
 
 ![Arduino Due](https://img.shields.io/badge/Arduino-Due-00979D?style=flat-square&logo=arduino&logoColor=white)

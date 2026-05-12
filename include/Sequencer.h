@@ -5,7 +5,7 @@
  *  ARCHITEKTURA
  * ═══════════════════════════════════════════════════════════════════
  *
- *  Paměť:  SEQ_PATTERNS × SEQ_STEPS kroků (4 × 16 = 64 SeqStep)
+ *  Paměť:  SEQ_PATTERNS × SEQ_STEPS kroků (4 × 32 = 128 SeqStep)
  *          Každý krok: nota (MIDI + Hz), amplitude, waveType, gate%, active
  *
  *  Timing (bez blokování):
@@ -81,7 +81,7 @@
 //  Konfigurace — uprav podle potřeby
 // ─────────────────────────────────────────────
 
-#define SEQ_STEPS          16u    // počet kroků na pattern
+#define SEQ_STEPS          32u    // počet kroků na pattern
 #define SEQ_PATTERNS        4u    // počet patternů v paměti
 #define SEQ_VOICE           0u    // hlas Synthex vyhrazený pro sekvencer
 #define SEQ_DEFAULT_TEMPO 250u    // výchozí délka kroku [ms] → 60 BPM
@@ -250,6 +250,7 @@ private:
     uint8_t  _curPattern;     // aktivní pattern (0–SEQ_PATTERNS-1)
     uint8_t  _curStep;        // aktuální krok  (0–SEQ_STEPS-1)
     SeqState _state;
+
 
     // Timery — inicializovány v konstruktoru
     MillisTimer _stepTimer;   // perioda kroku (autoReset=true)

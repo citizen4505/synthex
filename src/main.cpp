@@ -16,13 +16,13 @@
  *
  *  DAC výstup:     DAC1 (pin DAC1)  → audio
  *  Potenciometry:  A0 volume  A1 portamento  A2 wavetype  A3 tempo
- *  LCD:             RS=8 EN=9 D4=10 D5=11 D6=12 D7=7 (4-bitovy mod)
- *  Transport:      Pin 2  PLAY/PAUSE (tlačítko, INPUT_PULLUP)
- *                  Pin 3  STOP       (tlačítko, INPUT_PULLUP)
- *                  Pin 4  PATTERN+   (tlačítko, INPUT_PULLUP)
+ *  LCD:            RS=8 EN=9 D4=4 D5=5 D6=6 D7=7 (4-bitový mód)
+ *  Transport:      Pin 10  PLAY/PAUSE (tlačítko, INPUT_PULLUP)
+ *                  Pin 11  STOP       (tlačítko, INPUT_PULLUP)
+ *                  Pin 12  PATTERN+   (tlačítko, INPUT_PULLUP)
  *
  * ═══════════════════════════════════════════════════════════════════
- *  SEKVENCER — PATERNY
+ *  SEKVENCER — PATTERNY
  * ═══════════════════════════════════════════════════════════════════
  *
  *  PAT 0  A3 pentatonická moll  (blues/funk groove)
@@ -48,7 +48,7 @@
  *  Priority v loop():
  *    1. seq.update()      — krokový/gate timer (bezprostřední dopad na zvuk)
  *    2. pots.update()     — ADC + EMA každých 20 ms
- *    3. _readButtons()    — transport tlačítka každých 50 ms (debounce)
+ *    3. tlačítka          — transport každých 50 ms (debounce)
  *    4. disp.refresh()    — LCD překreslení každých 50 ms (~20 Hz)
  *    5. Serial (debug)    — volitelný výpis každou sekundu
  *
@@ -93,11 +93,6 @@ static Display&   disp   = Display::getInstance();
 // ─────────────────────────────────────────────
 //  Čtení tlačítek s debouncem
 //  Vrátí true pokud bylo tlačítko práve stisknuto (sestupná hrana).
-//
-//  Jak funguje software debounce:
-//    Uložíme předchozí stav každého tlačítka.
-//    Pokud aktuální stav == LOW a předchozí == HIGH → sestupná hrana.
-//    Kontrolujeme max každých BTN_POLL_MS → implicitní debounce.
 // ─────────────────────────────────────────────
 static bool _buttonPressed(uint8_t pin, uint8_t& lastState) {
     const uint8_t current = digitalRead(pin);
@@ -165,7 +160,6 @@ void loop() {
 
     // ── 2. Potenciometry (každých 20 ms) ──────────────────────
     if (pots.update()) {
-        // Propaguj změny do enginu a sekvenceru
         seq.setTempoMs(pots.tempoMs());
         seq.useGlobalWave(true, pots.waveType());
         seq.useGlobalAmplitude(true, pots.amplitude());
@@ -195,7 +189,6 @@ void loop() {
         }
 
         if (_buttonPressed(BTN_PATTERN, lastPat)) {
-            // Přepni na další pattern (cyklicky)
             const uint8_t next = (seq.currentPattern() + 1u) % SEQ_PATTERNS;
             seq.selectPattern(next);
             Serial.print(F("PATTERN: "));
@@ -204,8 +197,6 @@ void loop() {
     }
 
     // ── 4. Display refresh (každých 50 ms = 20 Hz) ────────────
-    //       LCD zápis trvá ~1.5 ms — nesmí být příliš časté.
-    //       50 ms interval = plynulá animace step gridu.
     static MillisTimer dispTimer(50u, true);
     if (dispTimer.expired()) {
         disp.refresh(seq, pots);

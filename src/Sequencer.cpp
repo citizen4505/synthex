@@ -1,5 +1,5 @@
 /*
- * Sequencer.cpp — implementace 16-krokového step sekvenceru
+ * Sequencer.cpp — implementace 32-krokového step sekvenceru
  *
  * Závislosti:
  *   Synthex.h   — noteOn() / noteOff() API
@@ -26,8 +26,8 @@ Sequencer& Sequencer::getInstance() {
 // ─────────────────────────────────────────────
 Sequencer::Sequencer()
     : _curPattern(0u), _curStep(0u), _state(SeqState::STOPPED),
-      _stepTimer(SEQ_DEFAULT_TEMPO, true),           // autoReset = true
-      _gateTimer(SEQ_DEFAULT_TEMPO * 75u / 100u, false), // one-shot
+      _stepTimer(SEQ_DEFAULT_TEMPO, true),
+      _gateTimer(SEQ_DEFAULT_TEMPO * 75u / 100u, false),
       _gateActive(false),
       _useGlobalWave(false), _globalWave(WaveType::SINE),
       _useGlobalAmp(false),  _globalAmp(512u),
@@ -397,6 +397,84 @@ void Sequencer::loadDemoPatterns() {
         setN(p, 13, MIDI_Ds4,  450u, 70u);  // Eb4
         setN(p, 14, MIDI_C4,   600u, 90u);  // rozlišení — forte legato
         setR(p, 15);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  PATTERN 0 — kroky 16–31 (druhá polovina: A3 penta moll — variace)
+    //
+    //  Krok: 17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
+    //  Nota: E4  G4  A4  ---  G4  E4  D4  ---  A3  C4  E4  G4  A4  ---  E4 ---
+    // ────────────────────────────────────────────────────────────
+    {
+        const uint8_t p = 0u;
+        setN(p, 16, MIDI_E4,  512u, 75u);
+        setN(p, 17, MIDI_G4,  450u, 60u);
+        setN(p, 18, MIDI_A4,  600u, 80u);
+        setR(p, 19);
+        setN(p, 20, MIDI_G4,  512u, 70u);
+        setN(p, 21, MIDI_E4,  512u, 75u);
+        setN(p, 22, MIDI_D4,  480u, 70u);
+        setR(p, 23);
+        setN(p, 24, MIDI_A3,  600u, 80u);
+        setN(p, 25, MIDI_C4,  500u, 70u);
+        setN(p, 26, MIDI_E4,  512u, 75u);
+        setN(p, 27, MIDI_G4,  512u, 70u);
+        setN(p, 28, MIDI_A4,  650u, 85u);
+        setR(p, 29);
+        setN(p, 30, MIDI_E4,  512u, 90u);
+        setR(p, 31);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  PATTERN 1 — kroky 16–31 (druhá polovina: dórská — vyšší fráze)
+    //
+    //  Krok: 17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
+    //  Nota: E4  G4  A4  B4  C5  D5  ---  C5  B4  A4  G4  F4  E4  D4  A3  ---
+    // ────────────────────────────────────────────────────────────
+    {
+        const uint8_t p = 1u;
+        setN(p, 16, MIDI_E4,  512u, 80u);
+        setN(p, 17, MIDI_G4,  512u, 80u);
+        setN(p, 18, MIDI_A4,  512u, 80u);
+        setN(p, 19, MIDI_B4,  512u, 80u);
+        setN(p, 20, MIDI_C5,  580u, 80u);
+        setN(p, 21, MIDI_D5,  650u, 85u);
+        setR(p, 22);
+        setN(p, 23, MIDI_C5,  580u, 75u);
+        setN(p, 24, MIDI_B4,  512u, 80u);
+        setN(p, 25, MIDI_A4,  512u, 80u);
+        setN(p, 26, MIDI_G4,  512u, 80u);
+        setN(p, 27, MIDI_F4,  512u, 80u);
+        setN(p, 28, MIDI_E4,  512u, 80u);
+        setN(p, 29, MIDI_D4,  600u, 80u);
+        setN(p, 30, MIDI_A3,  550u, 75u);
+        setR(p, 31);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  PATTERN 2 — kroky 16–31 (druhá polovina: blues — turnaround)
+    //
+    //  Krok: 17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
+    //  Nota: C4  ---  G4  F#4 F4  ---  Eb4 C4  ---  Bb4 G4  ---  F4  Eb4 C4 ---
+    // ────────────────────────────────────────────────────────────
+    {
+        const uint8_t p = 2u;
+        setN(p, 16, MIDI_C4,   600u, 85u);
+        setR(p, 17);
+        setN(p, 18, MIDI_G4,   512u, 80u);
+        setN(p, 19, MIDI_Fs4,  450u, 55u);  // blue note
+        setN(p, 20, MIDI_F4,   512u, 70u);
+        setR(p, 21);
+        setN(p, 22, MIDI_Ds4,  512u, 70u);  // Eb4
+        setN(p, 23, MIDI_C4,   512u, 80u);
+        setR(p, 24);
+        setN(p, 25, MIDI_As4,  512u, 75u);  // Bb4
+        setN(p, 26, MIDI_G4,   512u, 70u);
+        setR(p, 27);
+        setN(p, 28, MIDI_F4,   450u, 65u);
+        setN(p, 29, MIDI_Ds4,  450u, 70u);  // Eb4
+        setN(p, 30, MIDI_C4,   650u, 90u);  // finální rozlišení
+        setR(p, 31);
     }
 
     // ────────────────────────────────────────────────────────────

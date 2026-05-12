@@ -212,10 +212,12 @@ void Display::refresh(const Sequencer& seq, const Pots& pots) {
 // ─────────────────────────────────────────────
 //  _drawStepRow()  — řádek 0
 //
-//  Iteruje přes 16 kroků aktuálního patternu.
-//  Pro každý krok vybere správný symbol (CGRAM nebo ASCII).
+//  Zobrazí 16-krokové okno z 32-krokového patternu.
+//  Okno se přepíná podle pozice currentStep:
+//    kroky  0–15 → zobrazí se okno  0–15
+//    kroky 16–31 → zobrazí se okno 16–31
 //
-//  Logika výběru symbolu:
+//  Logika výběru symbolu (stejná pro každý viditelný krok):
 //
 //    isCurrent (== currentStep):
 //      stepHasNote → CGRAM 0 (CUR_NOTE, rámeček s tečkou)
@@ -230,35 +232,27 @@ void Display::refresh(const Sequencer& seq, const Pots& pots) {
 //    jinak (inactive):
 //      → ASCII '.' (nic nestahovat z CGRAM)
 //
-//  Trik: setCursor() voláme jednou pro celý řádek a pak píšeme
-//  16 znaků za sebou — LCD automaticky posune DDRAM adr. o +1.
-//  To šetří 15 zbytečných setCursor() volání.
+//  setCursor() se volá jednou; LCD posouvá DDRAM adr. automaticky.
 // ─────────────────────────────────────────────
 void Display::_drawStepRow(const Sequencer& seq) {
-    const uint8_t cur = seq.currentStep();
+    const uint8_t cur      = seq.currentStep();
+    const uint8_t winStart = (cur < 16u) ? 0u : 16u;
 
     _lcd.setCursor(0, 0);
 
-    for (uint8_t i = 0u; i < SEQ_STEPS; ++i) {
+    for (uint8_t i = winStart; i < winStart + 16u; ++i) {
         const bool isCurrent = (i == cur);
         const bool hasNote   = seq.stepHasNote(i);
         const bool isActive  = seq.stepIsActive(i);
 
         if (isCurrent) {
-            // Aktuální krok: ukaž, zda nota zní nebo je ticho
             _lcd.write(static_cast<uint8_t>(
                 hasNote ? LCD_CHAR_CUR_NOTE : LCD_CHAR_CUR_REST));
-
         } else if (hasNote) {
-            // Krok s notou (active=true, freq>0)
             _lcd.write(static_cast<uint8_t>(LCD_CHAR_NOTE));
-
         } else if (isActive) {
-            // Aktivní krok bez noty = pauza (rest)
             _lcd.write(static_cast<uint8_t>(LCD_CHAR_REST));
-
         } else {
-            // Neaktivní krok
             _lcd.write('.');
         }
     }
@@ -305,7 +299,6 @@ void Display::_drawInfoRow(const Sequencer& seq, const Pots& pots) {
     if (s.active && s.freq > 1.0f) {
         _midiToName(s.midiNote, noteBuf, sizeof(noteBuf));
     } else {
-        // Pauza nebo neaktivní krok
         noteBuf[0] = '-'; noteBuf[1] = '-'; noteBuf[2] = '-'; noteBuf[3] = '\0';
     }
 
